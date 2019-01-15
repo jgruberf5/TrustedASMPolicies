@@ -37,9 +37,9 @@ GET requests follow the common TrustedDevice syntax and take the following param
 
 | Parameter | Value |
 | --------- | ------ |
-|`targetHost`| The trusted device host or if not supplied the local device
-|`targetUUID`| The trusted device UUID or if not supplied the local device
-|`policyName` | The name of the ASM policy you want to query
+|`targetHost`| The trusted device host or if not supplied the local device.
+|`targetUUID`| The trusted device UUID or if not supplied the local device.
+|`policyName` | The name of the ASM policy you want to query.
 
 You can supply `targetHost` or `targetUUID`. If you supply `targetUUID` the `targetHost` and `targetPort` will be resolved for you.
 
@@ -110,10 +110,10 @@ DELETE requests follow the common TrustedDevice syntax and take the following pa
 
 | Parameter | Value |
 | --------- | ------ |
-|`targetHost`| The trusted device host or if not supplied the local device
-|`targetUUID`| The trusted device UUID or if not supplied the local device
-|`policyId` | The ID of the ASM policy you want to delete from the target host
-|`policyName` | The name of the ASM policy you want to delete from the target host
+|`targetHost`| The trusted device host or if not supplied the local device.
+|`targetUUID`| The trusted device UUID or if not supplied the local device.
+|`policyId` | The ID of the ASM policy you want to delete from the target host.
+|`policyName` | The name of the ASM policy you want to delete from the target host.
 
 You can supply `targetHost` or `targetUUID`. If you supply `targetUUID` the `targetHost` and `targetPort` will be resolved for you.
 
@@ -138,6 +138,16 @@ DELETE https://172.13.1.103/mgmt/shared/TrustedASMPolicies/8c79ab99-fa76-4e6e-a0
 }
 ```
 
+Additionally, in keeping with the TrustedProxy model, policies can also be deleted using only the URI path variables for both the trusted device UUID and the policy ID.
+
+```
+DELETE https://172.13.1.103/mgmt/shared/TrustedASMPolicies/8c79ab99-fa76-4e6e-a03a-5610620e4fee/DkhEogaI2u5fwK_kKo5Ctw
+
+```
+
+Of course, policies can be deleted using `targetHost` IP address and `policyName` query variables.
+
+
 ```
 DELETE https://172.13.1.103/mgmt/shared/TrustedASMPolicies?targetHost=172.13.1.106&policyName=linux-high
 
@@ -151,25 +161,45 @@ DELETE https://172.13.1.103/mgmt/shared/TrustedASMPolicies?targetHost=172.13.1.1
 }
 ```
 
+#### Response ####
+
+```
+{
+    "msg": "policy removed on target 172.13.1.106:443"
+}
+```
+
 ### POST Requests ###
 
-POST requests require the specification of two different device, the source and the target, and the `policyId` or `policyName` attributes which specifies the ASM policy to export and download from the source device and then to upload, import, and apply on the target device. When specifying the source and target devices, you can use either the trusted device host or UUID. 
+POST requests import ASM policies on a target trusted device. The source of the policy can either be exported from a different trusted device, or can be downloaded from a non-BIG-IP URL.
 
+#### Exporting from a BIG-IP device ####
+
+The source policy to be exported from a trusted device is specified us the following parameters:
 
 | Parameter | Value |
 | --------- | ------ |
-|`sourceHost`| The trusted device which currently has the policy to export
-|`sourceUUID`| The trusted device UUID which currently has the policy to export
-|`targetHost`| The trusted device host or if not supplied the local device
-|`targetUUID`| The trusted device UUID or if not supplied the local device
-|`policyId` | The ID of the ASM policy you want to delete from the target host
-|`policyName` | The name of the ASM policy you want to delete from the target host
+|`sourceHost`| The trusted device which currently has the policy to export.
+|`sourceUUID`| The trusted device UUID which currently has the policy to export.
+|`policyId` | The ID of the ASM policy you want to export from a source trusted device.
+|`policyName` | The name of the ASM policy you want to export from the source trusted device.
 
+You can specify either the `sourceHost` or the `sourceUUID` to identify the source trusted device.
 
-You can specify these parametes as either query variables or as part of the request body. The following request are equivalent:
+You can specify either the `policyId` or the `policyName` to identify the ASM policy to export.
+
+The target device to import the policy is specified using the following parameters:
+
+| Parameter | Value |
+| --------- | ------ |
+|`targetHost`| The trusted device host or if not supplied the local device.
+|`targetUUID`| The trusted device UUID or if not supplied the local device.
+|`targetPolicyName` | Optional alternative name for the policy on the target device.
+
+These variables can be defined as either query variables or part of the `POST` body.
 
 ```
-POST https://172.13.1.103/mgmt/shared/TrustedASMPolicies?sourceHost=172.13.1.101&targetHost=172.13.1.106&policyName=linux-high
+POST https://172.13.1.103/mgmt/shared/TrustedASMPolicies?sourceHost=172.13.1.101&targetHost=172.13.1.106&policyName=linux-high&targetPolicyName=imported-linux-high
 ```
 
 ```
@@ -178,7 +208,8 @@ POST https://172.13.1.103/mgmt/shared/TrustedASMPolicies
 {
     "sourceHost": "172.13.1.101",
     "targetHost": "172.13.1.106",
-    "policyName": "linux-high"
+    "policyName": "linux-high",
+    "targetPolicyName": "imported-linux-high"
 }
 ```
 
@@ -188,7 +219,8 @@ POST https://172.13.1.103/mgmt/shared/TrustedASMPolicies
 {
     "sourceUUID": "b80652cb-20bd-4e81-a6a6-c306fd643af7",
     "targetUUID": "8c79ab99-fa76-4e6e-a03a-5610620e4fee",
-    "policyName": "linux-high"
+    "policyId": "DkhEogaI2u5fwK_kKo5Ctw",
+    "targetPolicyName": "imported-linux-high"
 }
 ```
 
@@ -203,16 +235,6 @@ When the request is submitted, a returned policy status matching the `GET` reque
 |`IMPORTING` | The policy is being imported on the target device
 |`AVAILABLE` | The policy has been applied on the target device
 |`ERROR` | An error has occurred during the process and the `restnoded` log should be checked for details
-
-```
-POST https://172.13.1.103/mgmt/shared/TrustedASMPolicies
-
-{
-    "sourceHost": "172.13.1.101",
-    "targetHost": "172.13.1.106",
-    "policyName": "linux-high"
-}
-```
 
 #### Response ####
 
@@ -244,3 +266,49 @@ GET https://172.13.1.103/mgmt/shared/TrustedASMPolicies?targetHost=173.13.1.106&
     }
 ]
 ```
+
+#### Downloading from a non-BIG-IP URL ####
+ 
+The source policy downloaded from a non-BIG-IP URL using the following parameters:
+
+| Parameter | Value |
+| --------- | ------ |
+|`url`| The non-BIG-UP HTTP/HTTPS/FILE URL to download the previously exported ASM policy XML file.
+
+The target device to import the policy is specified using the following parameters:
+
+| Parameter | Value |
+| --------- | ------ |
+|`targetHost`| The trusted device host or if not supplied the local device.
+|`targetUUID`| The trusted device UUID or if not supplied the local device.
+|`targetPolicyName` | The required name for the policy on the target device.
+
+These variables can be defined as either query variables or part of the `POST` body.
+
+The following requests are equivalent.
+
+```
+POST https://172.13.1.103/mgmt/shared/TrustedASMPolicies?url=https://raw.githubusercontent.com/f5devcentral/f5-asm-policy-template-v13/master/application_ready_template_v13/Drupal_8/Drupal_8_Ready_Template_6.1.2_v13.xml&targetHost=172.13.1.101&targetPolicyName=Drupal_8_Ready_Template
+```
+
+```
+POST https://172.13.1.103/mgmt/shared/TrustedASMPolicies
+
+{
+    "url": "https://raw.githubusercontent.com/f5devcentral/f5-asm-policy-template-v13/master/application_ready_template_v13/Drupal_8/Drupal_8_Ready_Template_6.1.2_v13.xml"
+    "targetHost": "172.13.1.106",
+    "targetPolicyName": "Drupal_8_Ready_Template"
+}
+```
+
+The response is given in the same `GET` format, following the following states:
+
+| `state` Value | Meaning |
+| --------- | ------ |
+|`REQUESTED`| The process has been requested, but not initialized
+|`DOWNLOADING`| The exported policy is being downloaded from the source device
+|`UPLOADING`| The exported policy is being uploaded to the target device
+|`IMPORTING` | The policy is being imported on the target device
+|`AVAILABLE` | The policy has been applied on the target device
+|`ERROR` | An error has occurred during the process and the `restnoded` log should be checked for details
+
