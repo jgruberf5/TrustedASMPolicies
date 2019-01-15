@@ -79,6 +79,9 @@ class TrustedASMPoliciesWorker {
         const query = restOperation.getUri().query;
 
         let targetDevice = null;
+        let sourceDevice = null;
+        let policyId = null;
+        let policyName = null;
 
         if (query.targetHost) {
             targetDevice = query.targetHost;
@@ -88,42 +91,133 @@ class TrustedASMPoliciesWorker {
             targetDevice = paths[3];
         }
 
-        this.validateTarget(targetDevice)
-            .then((target) => {
-                this.getPoliciesOnBigIP(target.targetHost, target.targetPort)
-                    .then((policies) => {
-                        if (query.policyName) {
-                            let foundPolicy = false;
-                            policies.map((policy) => {
-                                if (policy.name.startsWith(query.policyName)) {
-                                    restOperation.statusCode = 200;
-                                    restOperation.setContentType('application/json');
-                                    restOperation.body = policy;
-                                    this.completeRestOperation(restOperation);
-                                    foundPolicy = true;
-                                }
-                            });
-                            if (!foundPolicy) {
-                                const err = new Error(`no policy with name starting with ${query.policyName} found.`);
-                                err.httpStatusCode = 404;
-                                restOperation.fail(err);
-                            }
-                        } else {
-                            restOperation.statusCode = 200;
-                            restOperation.setContentType('application/json');
-                            restOperation.body = policies;
-                            this.completeRestOperation(restOperation);
-                        }
-                    })
-                    .catch((err) => {
-                        err.httpStatusCode = 400;
-                        restOperation.fail(err);
-                    });
-            })
-            .catch((err) => {
-                err.httpStatusCode = 404;
+        if (query.sourceHost) {
+            sourceDevice = query.sourceHost;
+        } else if (query.sourceUUID) {
+            sourceDevice = query.sourceUUID;
+        }
+
+        if (query.policyName) {
+            policyName = query.policyName;
+        }
+
+        if (query.policyId) {
+            policyId = query.policyId;
+        } else if (paths.length > 4) {
+            policyId = paths[4];
+        }
+
+        if (sourceDevice) {
+            if (targetDevice) {
+                const err = new Error(`target device should be defined when defining source device`);
+                err.httpStatusCode = 400;
                 restOperation.fail(err);
-            });
+            } else if (policyId || policyName) {
+                this.validateTarget(sourceDevice)
+                    .then((source) => {
+                        this.getPoliciesOnBigIP(source.targetHost, source.targetPort)
+                            .then((policies) => {
+                                let policyFound = false;
+                                policies.map((policy) => {
+                                    if (!policyFound) {
+                                        if (policy.id == policyId || policy.name == policyName) {
+                                            policyFound = true;
+                                            this.exportPolicyFromBigIP(source.targetHost, source.targetPort, policy.id)
+                                                .then(() => {
+                                                    const policyFileName = 'exportedPolicy_' + policy.id + '.xml';
+                                                    this.downloadPolicyFileFromBigIP(source.targetHost, source.targetPort, policyFileName)
+                                                        .then(() => {
+                                                            this.getPolicyFileContentAndDelete(policyFileName)
+                                                                .then((policyContent) => {
+                                                                    restOperation.statusCode = 200;
+                                                                    restOperation.setHeaders({
+                                                                        ContentType: 'text/xml',
+                                                                        ContentDisposition: 'attachment',
+                                                                        filename: policyName + '.xml'
+                                                                    });
+                                                                    restOperation.body = policyContent;
+                                                                    this.completeRestOperation(restOperation);        
+                                                                })
+                                                                .catch((err) => {
+                                                                    err.httpStatusCode = 500;
+                                                                    restOperation.fail(err);    
+                                                                });
+                                                        })
+                                                        .catch((err) => {
+                                                            err.httpStatusCode = 500;
+                                                            restOperation.fail(err);
+                                                        });
+                                                })
+                                                .catch((err) => {
+                                                    err.httpStatusCode = 500;
+                                                    restOperation.fail(err);
+                                                });
+                                        }
+                                    }
+                                });
+                                if (!policyFound) {
+                                    const policyError = new Error('could not find policy');
+                                    policyError.httpStatusCode = 404;
+                                    restOperation.fail(policyError);
+                                }
+                            })
+                            .catch((err) => {
+                                err.httpStatusCode = 400;
+                                restOperation.fail(err);
+                            });
+                    });
+            } else {
+                const err = new Error(`you must supply either a policyName or policyId to export`);
+                err.httpStatusCode = 400;
+                restOperation.fail(err);
+            }
+        } else {
+            this.validateTarget(targetDevice)
+                .then((target) => {
+                    this.getPoliciesOnBigIP(target.targetHost, target.targetPort)
+                        .then((policies) => {
+                            if (policyName || policyId) {
+                                let policyFound = false;
+                                policies.map((policy) => {
+                                    if (!policyFound) {
+                                        if (policyName && policy.name.startsWith(policyName)) {
+                                            restOperation.statusCode = 200;
+                                            restOperation.setContentType('application/json');
+                                            restOperation.body = policy;
+                                            this.completeRestOperation(restOperation);
+                                            policyFound = true;
+                                        }
+                                        if (policyId && policy.id == policyId) {
+                                            restOperation.statusCode = 200;
+                                            restOperation.setContentType('application/json');
+                                            restOperation.body = policy;
+                                            this.completeRestOperation(restOperation);
+                                            policyFound = true;
+                                        }
+                                    }
+                                });
+                                if (!policyFound) {
+                                    const err = new Error(`no policy with matching policyName or policyId found.`);
+                                    err.httpStatusCode = 404;
+                                    restOperation.fail(err);
+                                }
+                            } else {
+                                restOperation.statusCode = 200;
+                                restOperation.setContentType('application/json');
+                                restOperation.body = policies;
+                                this.completeRestOperation(restOperation);
+                            }
+                        })
+                        .catch((err) => {
+                            err.httpStatusCode = 400;
+                            restOperation.fail(err);
+                        });
+                })
+                .catch((err) => {
+                    err.httpStatusCode = 404;
+                    restOperation.fail(err);
+                });
+        }
 
     }
     /**
@@ -148,7 +242,7 @@ class TrustedASMPoliciesWorker {
         }
 
         if (query.url) {
-            sourceUrl = url;
+            sourceUrl = query.url;
         }
 
         if (query.targetHost) {
@@ -229,9 +323,9 @@ class TrustedASMPoliciesWorker {
                                     .then(() => {
                                         this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, IMPORTING);
                                         this.importPolicyToBigIP(target.targetHost, target.targetPort, sourcePolicyId, targetPolicyName)
-                                            .then(() => {
+                                            .then((targetPolicyId) => {
                                                 delete inFlight[inFlightIndex];
-                                                this.applyPolicyOnBigIP(target.targetHost, target.targetPort, sourcePolicyId)
+                                                this.applyPolicyOnBigIP(target.targetHost, target.targetPort, targetPolicyId)
                                                     .then(() => {
                                                         this.logger.info('policy ' + sourcePolicyId + ' imported and applied on ' + target.targetHost + ':' + target.targetPort);
                                                     })
@@ -1021,7 +1115,7 @@ class TrustedASMPoliciesWorker {
                 }
                 this.logger.info('downloading policy file ' + policyFile + ' from ' + sourceHost + ':' + sourcePort);
                 const filePath = `${downloadDirectory}/${policyFile}`;
-                if (fs.existsSync()) {
+                if (fs.existsSync(filePath)) {
                     const fstats = fs.statSync(filePath);
                     this.logger.info('file ' + policyFile + '(' + fstats.size + ' bytes) was deleted');
                     fs.unlinkSync(filePath);
@@ -1082,6 +1176,18 @@ class TrustedASMPoliciesWorker {
                 }
             } catch (err) {
                 reject(err);
+            }
+        });
+    }
+
+    getPolicyFileContentAndDelete(policyFile) {
+        return new Promise((resolve, reject) => {
+            const filePath = `${downloadDirectory}/${policyFile}`;
+            if (fs.existsSync(filePath)) {
+                resolve(fs.readFileSync(filePath, 'utf8'));
+                fs.unlinkSync(filePath);
+            } else {
+                reject(new Error('file ' + filePath + ' was not found'));
             }
         });
     }

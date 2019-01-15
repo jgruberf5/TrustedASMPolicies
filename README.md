@@ -40,6 +40,7 @@ GET requests follow the common TrustedDevice syntax and take the following param
 |`targetHost`| The trusted device host or if not supplied the local device.
 |`targetUUID`| The trusted device UUID or if not supplied the local device.
 |`policyName` | The name of the ASM policy you want to query.
+|`policyUUID` | The UUID of the ASM policy you want to query.
 
 You can supply `targetHost` or `targetUUID`. If you supply `targetUUID` the `targetHost` and `targetPort` will be resolved for you.
 
@@ -49,7 +50,16 @@ In addition you can specify the `targetUUID` as a path parameter to keep the use
 
 If supplied as a path variable, the `targetUUD` does not need to send as a query variable.
 
-The `policyName` query variable is optional and will simply filter the results to policies with name starting with the supplied `policyName` value.
+The `policyName` query variable is optional and will filter the results to the first policy with name starting with the supplied `policyName` value.
+
+The `policyUUID` query variable is optional and will filter the results to the policy with UUID matching the supplied `policyUUID` value.
+
+In addition ou can specify the `policyUUID` as a path variable after the `targetUUID` in the path.
+
+`/mgmt/shared/TrustedASMPolicies/7390b3b8-7682-4554-83e5-764e4f26703c/DkhEogaI2u5fwK_kKo5Ctw`
+
+#### Query for all ASM policies on a trusted Device ####
+
 
 ```
 GET https://172.13.1.103/mgmt/shared/TrustedASMPolicies?targetHost=172.13.1.106
@@ -101,6 +111,66 @@ GET https://172.13.1.103/mgmt/shared/TrustedASMPolicies/8c79ab99-fa76-4e6e-a03a-
         "path": "/Common/linux-medium"
     }
 ]
+```
+
+#### Query for an ASM by name or id on a trusted device ####
+
+```
+GET https://172.13.1.103/mgmt/shared/TrustedASMPolicies?targetHost=172.13.1.106&policyName=linux-high
+```
+
+#### Response ####
+
+```
+{
+    "id": "DkhEogaI2u5fwK_kKo5Ctw",
+    "name": "linux-high",
+    "enforcementMode": "blocking",
+    "state": "AVAILABLE",
+    "path": "/Common/linux-high"
+}
+```
+
+```
+GET https://172.13.1.103/mgmt/shared/TrustedASMPolicies/8c79ab99-fa76-4e6e-a03a-5610620e4fee/DkhEogaI2u5fwK_kKo5Ctw
+```
+
+#### Response ####
+
+```
+{
+    "id": "DkhEogaI2u5fwK_kKo5Ctw",
+    "name": "linux-high",
+    "enforcementMode": "blocking",
+    "state": "AVAILABLE",
+    "path": "/Common/linux-high"
+}
+```
+
+### Retrieving an ASM XLM policy file from a trsuted source device ###
+
+The `GET` method can also be used to retrieve an exported ASM policy as an XML file. To retrieve the exported ASM policy as an XML file you must supply the following variables:
+
+| Parameter | Value |
+| --------- | ------ |
+|`sourceHost`| The trusted device host to export the ASM policy.
+|`sourceUUID`| The trusted device UUID to export the ASM policy.
+|`policyId` | The ID of the ASM policy you want to delete from the target host.
+|`policyName` | The name of the ASM policy you want to delete from the target host.
+
+
+You can supply either the `sourceHost` or `sourceUUID`. 
+
+You can supply either the `policyId` or `policyName`.
+
+You MUST not supply a `targetHost` or `targetUUID`, as these will trigger a query for ASM policies on a device.
+
+```
+GET https://172.13.1.103/mgmt/shared/TrustedASMPolicies?sourceHost=172.13.1.106&policyName=linux-high
+```
+
+```
+GET https://172.13.1.103/mgmt/shared/TrustedASMPolicies?sourceUUID=8c79ab99-fa76-4e6e-a03a-5610620e4fee&policyId=DkhEogaI2u5fwK_kKo5Ctw
 ```
 
 ### DELETE Requests ###
