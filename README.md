@@ -269,7 +269,7 @@ GET https://172.13.1.103/mgmt/shared/TrustedASMPolicies?targetHost=173.13.1.106&
 
 #### Downloading from a non-BIG-IP URL ####
  
-The source policy downloaded from a non-BIG-IP URL using the following parameters:
+The source of the ASM policy can be downloaded from a non-BIG-IP URL using the following parameters:
 
 | Parameter | Value |
 | --------- | ------ |
