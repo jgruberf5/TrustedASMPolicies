@@ -45,7 +45,7 @@ You can supply `targetHost` or `targetUUID`. If you supply `targetUUID` the `tar
 
 In addition you can specify the `targetUUID` as a path parameter to keep the user experience the same as the TrustProxy extension.
 
-`/mgmt/shared/TrustedExtensions/7390b3b8-7682-4554-83e5-764e4f26703c`
+`/mgmt/shared/TrustedASMPolicies/7390b3b8-7682-4554-83e5-764e4f26703c`
 
 If supplied as a path variable, the `targetUUD` does not need to send as a query variable.
 
@@ -119,7 +119,7 @@ You can supply `targetHost` or `targetUUID`. If you supply `targetUUID` the `tar
 
 In addition you can specify the `targetUUID` as a path parameter to keep the user experience the same as the TrustProxy extension.
 
-`/mgmt/shared/TrustedExtensions/7390b3b8-7682-4554-83e5-764e4f26703c`
+`/mgmt/shared/TrustedASMPolicies/7390b3b8-7682-4554-83e5-764e4f26703c`
 
 If supplied as a path variable, the `targetUUD` does not need to send as a query variable.
 
