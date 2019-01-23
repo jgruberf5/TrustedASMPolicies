@@ -21,8 +21,10 @@ const UNDISCOVERED = 'UNDISCOVERED';
 const UNKNOWN = 'UNKNOWN';
 const DEVICEGROUP_PREFIX = 'TrustProxy_';
 
+const TASKTIMEOUT = 120000;
+
 const downloadDirectory = '/var/tmp';
-const VALIDDOWNLOADPROTOCOLS = ['file:', 'http:', 'https:'];
+const VALIDDOWNLOADPROTOCOLS = ['file:', 'http', 'https:'];
 const deviceGroupsUrl = 'http://localhost:8100/mgmt/shared/resolver/device-groups';
 const localauth = 'Basic ' + new Buffer('admin:').toString('base64');
 
@@ -989,7 +991,7 @@ class TrustedASMPoliciesWorker {
     pollTaskUntilFinishedAndDelete(targetHost, targetPort, taskId, type, timeout) {
         return new Promise((resolve, reject) => {
             if (!timeout) {
-                timeout = 30000;
+                timeout = TASKTIMEOUT;
             }
             const start = new Date().getTime();
             let stop = start + timeout;
@@ -1053,11 +1055,53 @@ class TrustedASMPoliciesWorker {
                         } catch (err) {
                             reject(err);
                         }
+                    } else if(parsedUrl.protocol == 'http:') {
+                        this.logger.info('downloading ' + sourceUrl);
+                        let fws = fs.createWriteStream(filePath);
+                        let request = http.get(sourceUrl, (response) => {
+                                if (response.statusCode > 300 && response.statusCode < 400 && response.headers.location) {
+                                    fs.unlinkSync(filePath);
+                                    const redirectUrlParsed = url.parse(response.headers.location);
+                                    let redirectUrl = parsedUrl.host + response.headers.location;
+                                    if (redirectUrlParsed.hostname) {
+                                        redirectUrl = response.headers.location;
+                                    }
+                                    this.logger.info('following download redirect to:' + redirectUrl);
+                                    fws = fs.createWriteStream(filePath);
+                                    request = https.get(redirectUrl, (response) => {
+                                            this.logger.info('redirect has status: ' + response.statusCode + ' body:' + JSON.stringify(response.headers));
+                                            response.pipe(fws);
+                                            fws.on('finish', () => {
+                                                fws.close();
+                                                resolve(policyFile);
+                                            });
+                                        })
+                                        .on('error', (err) => {
+                                            this.logger.severe('error downloading url ' + redirectUrl + ' - ' + err.message);
+                                            fws.close();
+                                            fs.unlinkSync(filePath);
+                                            resolve(false);
+                                        });
+                                } else {
+                                    response.pipe(fws);
+                                    fws.on('finish', () => {
+                                        fws.close();
+                                        resolve(policyFile);
+                                    });
+                                }
+                            })
+                            .on('error', (err) => {
+                                this.logger.severe('error downloading url ' + sourceUrl + ' - ' + err.message);
+                                fws.close();
+                                fs.unlinkSync(filePath);
+                                resolve(false);
+                            });
+                        request.end();
                     } else {
                         this.logger.info('downloading ' + sourceUrl);
                         process.env["NODE_TLS_REJECT_UNAUTHORIZED"] = 0; // jshint ignore:line
-                        var fws = fs.createWriteStream(filePath);
-                        var request = https.get(sourceUrl, (response) => {
+                        let fws = fs.createWriteStream(filePath);
+                        let request = https.get(sourceUrl, (response) => {
                                 if (response.statusCode > 300 && response.statusCode < 400 && response.headers.location) {
                                     fs.unlinkSync(filePath);
                                     const redirectUrlParsed = url.parse(response.headers.location);
