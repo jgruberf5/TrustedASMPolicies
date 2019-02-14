@@ -138,11 +138,11 @@ class TrustedASMPoliciesWorker {
                                                                         filename: policyName + '.xml'
                                                                     });
                                                                     restOperation.body = policyContent;
-                                                                    this.completeRestOperation(restOperation);        
+                                                                    this.completeRestOperation(restOperation);
                                                                 })
                                                                 .catch((err) => {
                                                                     err.httpStatusCode = 500;
-                                                                    restOperation.fail(err);    
+                                                                    restOperation.fail(err);
                                                                 });
                                                         })
                                                         .catch((err) => {
@@ -350,6 +350,10 @@ class TrustedASMPoliciesWorker {
                                 this.logger.severe('error downloading policy file ' + policyFileName + ' from ' + sourceUrl + ' - ' + err.message);
                                 this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, ERROR);
                             });
+                        restOperation.statusCode = 202;
+                        restOperation.setContentType('application/json');
+                        restOperation.body = inFlight[inFlightIndex];
+                        this.completeRestOperation(restOperation);
                     })
                     .catch((err) => {
                         this.logger.severe(err.message);
@@ -1055,7 +1059,7 @@ class TrustedASMPoliciesWorker {
                         } catch (err) {
                             reject(err);
                         }
-                    } else if(parsedUrl.protocol == 'http:') {
+                    } else if (parsedUrl.protocol == 'http:') {
                         this.logger.info('downloading ' + sourceUrl);
                         let fws = fs.createWriteStream(filePath);
                         let request = http.get(sourceUrl, (response) => {
