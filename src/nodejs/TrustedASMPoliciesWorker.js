@@ -24,7 +24,7 @@ const DEVICEGROUP_PREFIX = 'TrustProxy_';
 const TASKTIMEOUT = 120000;
 
 const downloadDirectory = '/var/tmp';
-const VALIDDOWNLOADPROTOCOLS = ['file:', 'http', 'https:'];
+const VALIDDOWNLOADPROTOCOLS = ['file:', 'http:', 'https:'];
 const deviceGroupsUrl = 'http://localhost:8100/mgmt/shared/resolver/device-groups';
 const localauth = 'Basic ' + new Buffer('admin:').toString('base64');
 
