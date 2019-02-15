@@ -79,7 +79,8 @@ class TrustedASMPoliciesWorker {
     onGet(restOperation) {
         const paths = restOperation.uri.pathname.split('/');
         const query = restOperation.getUri().query;
-
+        const random = Math.floor(Math.random() * (2000000-1000000) + 1000000);
+        
         let targetDevice = null;
         let sourceDevice = null;
         let policyId = null;
@@ -124,9 +125,9 @@ class TrustedASMPoliciesWorker {
                                     if (!policyFound) {
                                         if (policy.id == policyId || policy.name == policyName) {
                                             policyFound = true;
-                                            this.exportPolicyFromBigIP(source.targetHost, source.targetPort, policy.id)
+                                            this.exportPolicyFromBigIP(source.targetHost, source.targetPort, policy.id, random)
                                                 .then(() => {
-                                                    const policyFileName = 'exportedPolicy_' + policy.id + '.xml';
+                                                    const policyFileName = 'exportedPolicy_' + random + '_' + policy.id + '.xml';
                                                     this.downloadPolicyFileFromBigIP(source.targetHost, source.targetPort, policyFileName)
                                                         .then(() => {
                                                             this.getPolicyFileContentAndDelete(policyFileName)
@@ -229,7 +230,8 @@ class TrustedASMPoliciesWorker {
      */
     onPost(restOperation) {
         const query = restOperation.getUri().query;
-
+        const random = Math.floor(Math.random() * (2000000-1000000) + 1000000);
+        
         let sourceDevice = null;
         let sourceUrl = null;
         let targetDevice = null;
@@ -305,7 +307,7 @@ class TrustedASMPoliciesWorker {
                     restOperation.fail(targetError);
                 }
                 const sourcePolicyId = targetPolicyName;
-                const policyFileName = 'exportedPolicy_' + sourcePolicyId + '.xml';
+                const policyFileName = 'exportedPolicy_' + random + '_' + sourcePolicyId + '.xml';
                 this.validateTarget(targetDevice)
                     .then((target) => {
                         const inFlightIndex = `${target.targetHost}:${target.targetPort}:${sourcePolicyId}`;
@@ -324,7 +326,7 @@ class TrustedASMPoliciesWorker {
                                 this.uploadPolicyFileToBigIP(target.targetHost, target.targetPort, policyFileName)
                                     .then(() => {
                                         this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, IMPORTING);
-                                        this.importPolicyToBigIP(target.targetHost, target.targetPort, sourcePolicyId, targetPolicyName)
+                                        this.importPolicyToBigIP(target.targetHost, target.targetPort, sourcePolicyId, targetPolicyName, random)
                                             .then((targetPolicyId) => {
                                                 delete inFlight[inFlightIndex];
                                                 this.applyPolicyOnBigIP(target.targetHost, target.targetPort, targetPolicyId)
@@ -398,26 +400,28 @@ class TrustedASMPoliciesWorker {
                                     .then((target) => {
                                         this.getPoliciesOnBigIP(target.targetHost, target.targetPort)
                                             .then((policies) => {
-                                                policies.map((policy) => {
-                                                    if (policy.id == sourcePolicyId) {
-                                                        const policyTargetError = new Error(`source policy ${sourcePolicyId} is already on ${target.targetHost}:${target.targetPort}`);
-                                                        policyTargetError.httpStatusCode = 409;
-                                                        restOperation.fail(policyTargetError);
-                                                    }
-                                                });
+                                                // policies.map((policy) => {
+                                                //     if (policy.id == sourcePolicyId) {
+                                                //         const policyTargetError = new Error(`source policy ${sourcePolicyId} is already on ${target.targetHost}:${target.targetPort}`);
+                                                //         policyTargetError.httpStatusCode = 409;
+                                                //         restOperation.fail(policyTargetError);
+                                                //     }
+                                                // });
                                                 const inFlightIndex = `${target.targetHost}:${target.targetPort}:${sourcePolicyId}`;
                                                 let returnPolicy = {
                                                     id: sourcePolicyId,
                                                     name: sourcePolicyName,
+                                                    targetName: targetPolicyName,
                                                     enforcementMode: sourcePolicyEnforcementMode,
                                                     state: REQUESTED,
                                                     path: sourcePolicyFullPath
                                                 };
                                                 inFlight[inFlightIndex] = returnPolicy;
                                                 this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, EXPORTING);
-                                                this.exportPolicyFromBigIP(source.targetHost, source.targetPort, sourcePolicyId)
+                                                this.exportPolicyFromBigIP(source.targetHost, source.targetPort, sourcePolicyId, random)
                                                     .then(() => {
-                                                        const policyFileName = 'exportedPolicy_' + sourcePolicyId + '.xml';
+                                                        const policyFileName = 'exportedPolicy_' + random + '_' + sourcePolicyId + '.xml';
+                                                        this.logger.info('TrustedASMPolicies: policyFileName='+policyFileName);
                                                         this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, DOWNLOADING);
                                                         this.downloadPolicyFileFromBigIP(source.targetHost, source.targetPort, policyFileName)
                                                             .then(() => {
@@ -425,7 +429,7 @@ class TrustedASMPoliciesWorker {
                                                                 this.uploadPolicyFileToBigIP(target.targetHost, target.targetPort, policyFileName)
                                                                     .then(() => {
                                                                         this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, IMPORTING);
-                                                                        this.importPolicyToBigIP(target.targetHost, target.targetPort, sourcePolicyId, targetPolicyName)
+                                                                        this.importPolicyToBigIP(target.targetHost, target.targetPort, sourcePolicyId, targetPolicyName, random)
                                                                             .then((targetPolicyId) => {
                                                                                 delete inFlight[inFlightIndex];
                                                                                 this.applyPolicyOnBigIP(target.targetHost, target.targetPort, targetPolicyId)
@@ -626,9 +630,9 @@ class TrustedASMPoliciesWorker {
     /* jshint ignore:end */
 
     /* jshint ignore:start */
-    exportPolicyFromBigIP(sourceHost, sourcePort, policyId) {
+    exportPolicyFromBigIP(sourceHost, sourcePort, policyId, random) {
         return new Promise((resolve, reject) => {
-            this.restRequestSender.sendPost(this.getExportRestOp(sourceHost, sourcePort, policyId))
+            this.restRequestSender.sendPost(this.getExportRestOp(sourceHost, sourcePort, policyId, random))
                 .then((response) => {
                     let task = response.getBody();
                     if (task.hasOwnProperty('id')) {
@@ -652,9 +656,9 @@ class TrustedASMPoliciesWorker {
     /* jshint ignore:end */
 
     /* jshint ignore:start */
-    importPolicyToBigIP(targetHost, targetPort, policyId, policyName) {
+    importPolicyToBigIP(targetHost, targetPort, policyId, policyName, random) {
         return new Promise((resolve, reject) => {
-            this.restRequestSender.sendPost(this.getImportRestOp(targetHost, targetPort, policyId, policyName))
+            this.restRequestSender.sendPost(this.getImportRestOp(targetHost, targetPort, policyId, policyName, random))
                 .then((response) => {
                     let task = response.getBody();
                     if (task.hasOwnProperty('id')) {
@@ -735,14 +739,14 @@ class TrustedASMPoliciesWorker {
         return op;
     }
 
-    getExportRestOp(sourceHost, sourcePort, policyId) {
+    getExportRestOp(sourceHost, sourcePort, policyId, random) {
         let protocol = 'https';
         if (sourceHost == 'localhost') {
             protocol = 'http';
         }
         const destUri = `${protocol}://${sourceHost}:${sourcePort}/mgmt/tm/asm/tasks/export-policy`;
         const destBody = {
-            filename: "exportedPolicy_" + policyId + ".xml",
+            filename: "exportedPolicy_" + random + '_' + policyId + ".xml",
             minimal: true,
             policyReference: {
                 link: "http://localhost/mgmt/tm/asm/policies/" + policyId
@@ -762,14 +766,14 @@ class TrustedASMPoliciesWorker {
         return op;
     }
 
-    getImportRestOp(targetHost, targetPort, policyId, policyName) {
+    getImportRestOp(targetHost, targetPort, policyId, policyName, random) {
         let protocol = 'https';
         if (targetHost == 'localhost') {
             protocol = 'http';
         }
         const destUri = `${protocol}://${targetHost}:${targetPort}/mgmt/tm/asm/tasks/import-policy`;
         const destBody = {
-            filename: "exportedPolicy_" + policyId + ".xml",
+            filename: "exportedPolicy_" + random + '_' + policyId + ".xml",
             name: policyName
         };
         const op = this.restOperationFactory.createRestOperationInstance()
@@ -1015,7 +1019,7 @@ class TrustedASMPoliciesWorker {
                                 this.restRequestSender.sendDelete(this.getDeleteTaskRestOp(targetHost, targetPort, taskId, type));
                                 resolve(returnData);
                             } else if (queryBody.status === FAILED) {
-                                reject(new Error('Task failed returning' + queryBody));
+                                reject(new Error('Task failed returning ' + JSON.stringify(queryBody)));
                             } else {
                                 wait(pollDelay)
                                     .then(() => {
@@ -1241,6 +1245,7 @@ class TrustedASMPoliciesWorker {
     }
 
     uploadPolicyFileToBigIP(targetHost, targetPort, policyFile) {
+        this.logger.info('TrustedASMPolicies: uploading file ' + policyFile + ' to ' + targetHost);
         return new Promise((resolve, reject) => {
             const filePath = `${downloadDirectory}/${policyFile}`;
             const fstats = fs.statSync(filePath);
