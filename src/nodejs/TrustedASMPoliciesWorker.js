@@ -123,7 +123,7 @@ class TrustedASMPoliciesWorker {
         if (sourceDevice) {
             // Download Policy XML file from BIG-IP
             if (targetDevice) {
-                const err = new Error(`target device should not be defined when defining source device`);
+                const err = new Error(`target device should not be defined when defining source device for policy XML file download`);
                 err.httpStatusCode = 400;
                 restOperation.fail(err);
             } else if (policyId || policyName) {
@@ -312,6 +312,7 @@ class TrustedASMPoliciesWorker {
                 const sourcePolicyTimestamp = new Date().getTime();
                 this.validateTarget(targetDevice)
                     .then((target) => {
+                        this.logger.info('request made to import policy ' + targetPolicyName + ' from url ' + sourceUrl + ' on device ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
                         const inFlightIndex = `${target.targetHost}:${target.targetPort}:${sourcePolicyId}`;
                         let returnPolicy = {
                             id: sourceUrl,
@@ -334,11 +335,12 @@ class TrustedASMPoliciesWorker {
                                 return this.importPolicyToBigIP(target.targetHost, target.targetPort, sourcePolicyId, targetPolicyName, sourcePolicyTimestamp);
                             })
                             .then((targetPolicyId) => {
-                                delete inFlight[inFlightIndex];
+                                this.logger.info('policy ' + targetPolicyName + ' imported as policy ID:' + targetPolicyId + ' on device ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
                                 return this.applyPolicyOnBigIP(target.targetHost, target.targetPort, targetPolicyId);
                             })
                             .then(() => {
-                                this.logger.info('policy ' + sourcePolicyId + ' imported and applied on ' + target.targetHost + ':' + target.targetPort);
+                                this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, FINISHED);
+                                this.logger.info('policy ' + sourcePolicyId + ' imported and applied on ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
                             })
                             .catch((err) => {
                                 if (inFlightIndex.hasOwnProperty(inFlightIndex)) {
@@ -408,7 +410,8 @@ class TrustedASMPoliciesWorker {
                                         this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, ERROR);
                                         throw throwErr;
                                     } else {
-                                        this.logger.info('source policy ' + sourcePolicyName + ' was found on device is id: ' + sourcePolicyId + ' last changed: ' + sourcePolicyLastChanged);
+                                        this.logger.info('request made to transfer and import source policy ' + sourcePolicyName + ' as ' + targetPolicyName + ' from source device ' + source.targetUUID + ' ' + source.targetHost + ":" + source.targetPort + ' to target device ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort); 
+                                        this.logger.info('source policy ' + sourcePolicyName + ' was found on source device as policy id: ' + sourcePolicyId + ' last changed: ' + sourcePolicyLastChanged);
                                         this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, QUERYING);
                                         return this.getPoliciesOnBigIP(target.targetHost, target.targetPort, true);
                                     }
@@ -417,9 +420,10 @@ class TrustedASMPoliciesWorker {
                                     let needToRemove = false;
                                     targetPolicies.forEach((targetPolicy) => {
                                         if (targetPolicyName == targetPolicy.name && sourcePolicyId == targetPolicy.id && sourcePolicyLastChanged == targetPolicy.lastChanged) {
-                                            this.logger.info('requested policy name:' + targetPolicyName + ' id:' + sourcePolicyId + ' lastChanged:' + targetPolicy.lastChanged + ' already exists on target device:' + target.targetHost + ':' + target.targetPort);
+                                            this.logger.info('requested policy name:' + targetPolicyName + ' id:' + sourcePolicyId + ' lastChanged:' + targetPolicy.lastChanged + ' already exists on target device:' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
                                             this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, FINISHED);
                                         } else if(sourcePolicyId == targetPolicy.id) {
+                                            this.logger.info('requested policy name:' + targetPolicyName + ' id:' + sourcePolicyId + ' was found on the target device but the lastChanged timestamps (source: ' + sourcePolicyLastChanged + ' target: ' + targetPolicy.lastChanged + ') were not the same. Removing policy from target device.');
                                             needToRemove = true;
                                         }
                                     });
@@ -454,13 +458,14 @@ class TrustedASMPoliciesWorker {
                                 })
                                 .then((targetPolicyId) => {
                                     if (inFlight.hasOwnProperty(inFlightIndex)) {
+                                        this.logger.info('policy ' + targetPolicyName + ' imported as policy ID:' + targetPolicyId + ' on device ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
                                         this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, APPLYING);
                                         return this.applyPolicyOnBigIP(target.targetHost, target.targetPort, targetPolicyId);
                                     }
                                 })
                                 .then(() => {
                                     this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, FINISHED);
-                                    this.logger.info('policy ' + sourcePolicyId + ' imported and applied on ' + target.targetHost + ':' + target.targetPort);
+                                    this.logger.info('policy ' + sourcePolicyId + ' imported and applied on ' + target.targUUID + ' ' + target.targetHost + ':' + target.targetPort);
                                 })
                                 .catch((err) => {
                                     this.logger.severe('error processing ASM policy - ' + err.message);
@@ -1063,7 +1068,7 @@ class TrustedASMPoliciesWorker {
                                         if (new Date().getTime() < stop) {
                                             poll();
                                         } else {
-                                            reject(new Error('Task did not reach ' + FINISHED + ' status. Instead returned: ' + JSON.stringify(queryBody)));
+                                            reject(new Error('Policy task did not reach ' + FINISHED + ' status within timeout. Instead returned: ' + JSON.stringify(queryBody)));
                                         }
                                     });
                             }
