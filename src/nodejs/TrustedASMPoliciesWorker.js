@@ -465,7 +465,7 @@ class TrustedASMPoliciesWorker {
                                 })
                                 .then(() => {
                                     this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, FINISHED);
-                                    this.logger.info('policy ' + sourcePolicyId + ' imported and applied on ' + target.targUUID + ' ' + target.targetHost + ':' + target.targetPort);
+                                    this.logger.info('policy ' + sourcePolicyId + ' imported and applied on ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
                                 })
                                 .catch((err) => {
                                     this.logger.severe('error processing ASM policy - ' + err.message);
