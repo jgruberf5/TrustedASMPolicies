@@ -78,7 +78,7 @@ class TrustedASMPoliciesWorker {
 
     onStart(success) {
         this.clearPolicyFileCache();
-        setInterval(this.clearPolicyFileCache(), 3600000);
+        setInterval(this.clearPolicyFileCache, 3600000);
         success();
     }
 
