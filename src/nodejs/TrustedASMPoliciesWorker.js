@@ -336,6 +336,7 @@ class TrustedASMPoliciesWorker {
                             path: UNKNOWN
                         };
                         inFlightRequests[inFlightIndex] = returnPolicy;
+                        let newPolicyId = UNKNOWN;
                         this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, DOWNLOADING);
                         this.downloadPolicyFile(sourceUrl, sourcePolicyId, sourcePolicyTimestamp)
                             .then(() => {
@@ -349,22 +350,16 @@ class TrustedASMPoliciesWorker {
                             .then((targetPolicyId) => {
                                 this.logger.info(LOGGINGPREFIX + 'policy ' + targetPolicyName + ' imported as policy ID:' + targetPolicyId + ' on device ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
                                 delete inFlightRequests[inFlightIndex];
-                                inFlightIndex = `${target.targetHost}:${target.targetPort}:${targetPolicyId}`;
-                                returnPolicy = {
-                                    id: targetPolicyId,
-                                    name: targetPolicyName,
-                                    enforcementMode: UNKNOWN,
-                                    lastChanged: UNKNOWN,
-                                    lastChange: UNKNOWN,
-                                    state: APPLYING,
-                                    path: UNKNOWN 
-                                }
+                                newPolicyId = targetPolicyId;
+                                inFlightIndex = `${target.targetHost}:${target.targetPort}:${newPolicyId}`;
+                                returnPolicy.id = newPolicyId;
+                                returnPolicy.state = APPLYING;
                                 inFlightRequests[inFlightIndex] = returnPolicy;
-                                return this.applyPolicyOnBigIP(target.targetHost, target.targetPort, targetPolicyId);
+                                return this.applyPolicyOnBigIP(target.targetHost, target.targetPort, newPolicyId);
                             })
                             .then(() => {
-                                this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, FINISHED);
-                                this.logger.info(LOGGINGPREFIX + 'policy ' + sourcePolicyId + ' imported and applied on ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
+                                this.updateInflightState(target.targetHost, target.targetPort, newPolicyId, FINISHED);
+                                this.logger.info(LOGGINGPREFIX + 'policy ' + sourcePolicyId + ' with policyId: ' + newPolicyId + ' was imported and applied on ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
                             })
                             .catch((err) => {
                                 if (inFlightIndex.hasOwnProperty(inFlightIndex)) {
