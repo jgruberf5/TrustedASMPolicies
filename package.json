@@ -1,6 +1,6 @@
 {
   "name": "TrustedASMExtensions",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "description": "iControl LX extension to export ASM policies from trusted TMOS devices and upload them to other trusted devices",
   "scripts": {
