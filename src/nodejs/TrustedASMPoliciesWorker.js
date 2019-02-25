@@ -363,6 +363,26 @@ class TrustedASMPoliciesWorker {
                         this.downloadPolicyFile(sourceUrl, sourcePolicyId, sourcePolicyTimestamp)
                             .then(() => {
                                 delete requestedTasks[requestIndex];
+                                return this.getPoliciesOnBigIP(target.targetHost, target.targetPort);
+                            })
+                            .then((targetPolicies) => {
+                                let needToRemove = false;
+                                let targetPolicyId = null;
+                                targetPolicies.forEach((targetPolicy) => {
+                                    if (targetPolicyName == targetPolicy.name) {
+                                        // the policy WAS found on the target device, but it was another version, flag the policy for removal
+                                        this.logger.info(LOGGINGPREFIX + 'requested policy name:' + targetPolicyName + ' was found on the target device. removing policy from target device.');
+                                        needToRemove = true;
+                                        targetPolicyId = targetPolicy.id;
+                                    }
+                                });
+                                if (needToRemove) {
+                                    // the policy on the target device was not the right version, delete it and continue processing
+                                    this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, REMOVING);
+                                    return this.deletePolicyOnBigIP(target.targetHost, target.targetPort, targetPolicyId);
+                                }
+                            })
+                            .then(() => {
                                 return this.importPolicyToBigIP(target.targetHost, target.targetPort, sourcePolicyId, targetPolicyName, sourcePolicyTimestamp);
                             })
                             .then((newPolicyId) => {
@@ -397,7 +417,7 @@ class TrustedASMPoliciesWorker {
                         targetPolicyName = policyName;
                     }
                     let sourcePolicyId = targetPolicyName;
-                    let sourcePolicyName = null;
+                    let sourcePolicyName = false;
                     let sourcePolicyLastChanged = null;
                     let sourcePolicyTimestamp = null;
                     if (policyId) {
@@ -444,13 +464,13 @@ class TrustedASMPoliciesWorker {
                                 .then((targetPolicies) => {
                                     let needToRemove = false;
                                     targetPolicies.forEach((targetPolicy) => {
-                                        if (targetPolicyName == targetPolicy.name && sourcePolicyId == targetPolicy.id && sourcePolicyLastChanged == targetPolicy.lastChanged) {
+                                        if (targetPolicyName == targetPolicy.name && sourcePolicyLastChanged == targetPolicy.lastChanged) {
                                             // the policy WAS found on the target device and it is the same exact policy version.. no further processing needed
-                                            this.logger.info(LOGGINGPREFIX + 'requested policy name:' + targetPolicyName + ' id:' + sourcePolicyId + ' lastChanged:' + targetPolicy.lastChanged + ' already exists on target device:' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
+                                            this.logger.info(LOGGINGPREFIX + 'requested policy name:' + targetPolicyName + ' lastChanged:' + targetPolicy.lastChanged + ' already exists on target device:' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
                                             this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, FINISHED);
-                                        } else if (sourcePolicyId == targetPolicy.id) {
+                                        } else if (targetPolicyName == targetPolicy.name) {
                                             // the policy WAS found on the target device, but it was another version, flag the policy for removal
-                                            this.logger.info(LOGGINGPREFIX + 'requested policy name:' + targetPolicyName + ' id:' + sourcePolicyId + ' was found on the target device but the lastChanged timestamps (source: ' + sourcePolicyLastChanged + ' target: ' + targetPolicy.lastChanged + ') were not the same. Removing policy from target device.');
+                                            this.logger.info(LOGGINGPREFIX + 'requested policy name:' + targetPolicyName + ' was found on the target device but the lastChanged timestamps (source: ' + sourcePolicyLastChanged + ' target: ' + targetPolicy.lastChanged + ') were not the same. removing policy from target device.');
                                             needToRemove = true;
                                         }
                                     });
