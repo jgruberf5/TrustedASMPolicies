@@ -7,6 +7,8 @@ const http = require('http');
 const https = require('https');
 const url = require('url');
 const path = require('path');
+const EventEmitter = require('events');
+
 const pollDelay = 2000;
 const AVAILABLE = 'AVAILABLE';
 const INACTIVE = 'INACTIVE';
@@ -14,7 +16,6 @@ const REQUESTED = 'REQUESTED';
 const QUERYING = 'QUERYING';
 const REMOVING = 'REMOVING';
 const EXPORTING = 'EXPORTING';
-const DOWNLOADING = 'DOWNLOADING';
 const UPLOADING = 'UPLOADING';
 const IMPORTING = 'IMPORTING';
 const APPLYING = 'APPLYING';
@@ -37,15 +38,13 @@ const localauth = 'Basic ' + new Buffer('admin:').toString('base64');
 const LOGGINGPREFIX = '[TrustedASMPolicies], ';
 
 // Async Request state object
-let inFlightRequests = {};
+let requestedTasks = {};
 
-// Concurrency Semaphore in ASM tasks
-let inFlightExports = {};
-let inFlightImports = {};
-let inFlightApplies = {};
-// Concurrency Semaphore in XML file tasks
-let inFlightDownloads = {};
-let inFlightUploads = {};
+// Concurrency Semaphores 
+let inFlightExports = {}; // export from source ASM devices
+let inFlightDownloads = {}; // downloading policy from source device
+let inFlightUploads = {}; // uploading policy to target device
+let inFlightImports = {}; // import to target ASM devices
 
 // polyfill old node to include [].includes
 if (!Array.prototype.includes) {
@@ -162,9 +161,6 @@ class TrustedASMPoliciesWorker {
                                     throwError.httpStatusCode = 404;
                                     throw throwError;
                                 }
-                            })
-                            .then(() => {
-                                return this.downloadPolicyFileFromBigIP(source.targetHost, source.targetPort, policyId, policyLastChanged);
                             })
                             .then(() => {
                                 return this.getPolicyFileContent(policyId, policyLastChanged);
@@ -325,7 +321,7 @@ class TrustedASMPoliciesWorker {
                 this.validateTarget(targetDevice)
                     .then((target) => {
                         this.logger.info(LOGGINGPREFIX + 'request made to import policy ' + targetPolicyName + ' from url ' + sourceUrl + ' on device ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
-                        let inFlightIndex = `${target.targetHost}:${target.targetPort}:${sourcePolicyId}`;
+                        let requestIndex = `${target.targetHost}:${target.targetPort}:${sourcePolicyId}`;
                         let returnPolicy = {
                             id: sourceUrl,
                             name: targetPolicyName,
@@ -335,35 +331,20 @@ class TrustedASMPoliciesWorker {
                             state: REQUESTED,
                             path: UNKNOWN
                         };
-                        inFlightRequests[inFlightIndex] = returnPolicy;
-                        let newPolicyId = UNKNOWN;
-                        this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, DOWNLOADING);
+                        requestedTasks[requestIndex] = returnPolicy;
+                        this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, EXPORTING);
                         this.downloadPolicyFile(sourceUrl, sourcePolicyId, sourcePolicyTimestamp)
                             .then(() => {
-                                this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, UPLOADING);
-                                return this.uploadPolicyFileToBigIP(target.targetHost, target.targetPort, sourcePolicyId, sourcePolicyTimestamp);
-                            })
-                            .then(() => {
-                                this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, IMPORTING);
+                                delete requestedTasks[requestIndex];
                                 return this.importPolicyToBigIP(target.targetHost, target.targetPort, sourcePolicyId, targetPolicyName, sourcePolicyTimestamp);
                             })
-                            .then((targetPolicyId) => {
-                                this.logger.info(LOGGINGPREFIX + 'policy ' + targetPolicyName + ' imported as policy ID:' + targetPolicyId + ' on device ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
-                                delete inFlightRequests[inFlightIndex];
-                                newPolicyId = targetPolicyId;
-                                inFlightIndex = `${target.targetHost}:${target.targetPort}:${newPolicyId}`;
-                                returnPolicy.id = newPolicyId;
-                                returnPolicy.state = APPLYING;
-                                inFlightRequests[inFlightIndex] = returnPolicy;
-                                return this.applyPolicyOnBigIP(target.targetHost, target.targetPort, newPolicyId);
-                            })
-                            .then(() => {
+                            .then((newPolicyId) => {
                                 this.updateInflightState(target.targetHost, target.targetPort, newPolicyId, FINISHED);
                                 this.logger.info(LOGGINGPREFIX + 'policy ' + sourcePolicyId + ' with policyId: ' + newPolicyId + ' was imported and applied on ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
                             })
                             .catch((err) => {
-                                if (inFlightIndex.hasOwnProperty(inFlightIndex)) {
-                                    this.logger.severe(LOGGINGPREFIX + 'error processing ASM policy in state:' + inFlightRequests[inFlightIndex].state + ' - ' + err.message);
+                                if (requestedTasks.hasOwnProperty(requestIndex)) {
+                                    this.logger.severe(LOGGINGPREFIX + 'error processing ASM policy in state:' + requestedTasks[requestIndex].state + ' - ' + err.message);
                                     this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, ERROR);
                                 } else {
                                     this.logger.severe(LOGGINGPREFIX + 'error after applying ASM policy - ' + err.message);
@@ -372,7 +353,7 @@ class TrustedASMPoliciesWorker {
                             });
                         restOperation.statusCode = 202;
                         restOperation.setContentType('application/json');
-                        restOperation.body = inFlightRequests[inFlightIndex];
+                        restOperation.body = requestedTasks[requestIndex];
                         this.completeRestOperation(restOperation);
                     })
                     .catch((err) => {
@@ -397,8 +378,7 @@ class TrustedASMPoliciesWorker {
                         sourcePolicyId = policyId;
                     }
 
-                    let inFlightIndex = null;
-
+                    let requestIndex = null;
 
                     this.validateTarget(targetDevice)
                         .then((target) => {
@@ -410,8 +390,8 @@ class TrustedASMPoliciesWorker {
                                             sourcePolicyName = sourcePolicy.name;
                                             sourcePolicyLastChanged = sourcePolicy.lastChanged;
                                             sourcePolicyTimestamp = new Date(sourcePolicy.lastChanged).getTime();
-                                            // initialize inflight state
-                                            inFlightIndex = `${target.targetHost}:${target.targetPort}:${sourcePolicyId}`;
+                                            // initialize inflight state for this request
+                                            requestIndex = `${target.targetHost}:${target.targetPort}:${sourcePolicyId}`;
                                             let returnPolicy = {
                                                 id: sourcePolicy.id,
                                                 name: targetPolicyName,
@@ -421,7 +401,7 @@ class TrustedASMPoliciesWorker {
                                                 state: REQUESTED,
                                                 path: sourcePolicy.path
                                             };
-                                            inFlightRequests[inFlightIndex] = returnPolicy;
+                                            requestedTasks[requestIndex] = returnPolicy;
                                         }
                                     });
                                     if (!sourcePolicyName) {
@@ -439,47 +419,31 @@ class TrustedASMPoliciesWorker {
                                     let needToRemove = false;
                                     targetPolicies.forEach((targetPolicy) => {
                                         if (targetPolicyName == targetPolicy.name && sourcePolicyId == targetPolicy.id && sourcePolicyLastChanged == targetPolicy.lastChanged) {
+                                            // the policy WAS found on the target device and it is the same exact policy version.. no further processing needed
                                             this.logger.info(LOGGINGPREFIX + 'requested policy name:' + targetPolicyName + ' id:' + sourcePolicyId + ' lastChanged:' + targetPolicy.lastChanged + ' already exists on target device:' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
                                             this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, FINISHED);
                                         } else if (sourcePolicyId == targetPolicy.id) {
+                                            // the policy WAS found on the target device, but it was another version, flag the policy for removal
                                             this.logger.info(LOGGINGPREFIX + 'requested policy name:' + targetPolicyName + ' id:' + sourcePolicyId + ' was found on the target device but the lastChanged timestamps (source: ' + sourcePolicyLastChanged + ' target: ' + targetPolicy.lastChanged + ') were not the same. Removing policy from target device.');
                                             needToRemove = true;
                                         }
                                     });
-                                    if (inFlightRequests.hasOwnProperty(inFlightIndex) && needToRemove) {
+                                    if (needToRemove) {
+                                        // the policy on the target device was not the right version, delete it and continue processing
                                         this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, REMOVING);
                                         return this.deletePolicyOnBigIP(target.targetHost, target.targetPort, sourcePolicyId);
                                     }
                                 })
                                 .then(() => {
-                                    if (inFlightRequests.hasOwnProperty(inFlightIndex)) {
+                                    // if I have not submitted the FINISHED state, export the policy from the source device and download
+                                    if (requestedTasks.hasOwnProperty(requestIndex)) {
                                         this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, EXPORTING);
                                         return this.exportPolicyFromBigIP(source.targetHost, source.targetPort, sourcePolicyId, sourcePolicyTimestamp);
                                     }
                                 })
                                 .then(() => {
-                                    if (inFlightRequests.hasOwnProperty(inFlightIndex)) {
-                                        this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, DOWNLOADING);
-                                        return this.downloadPolicyFileFromBigIP(source.targetHost, source.targetPort, sourcePolicyId, sourcePolicyTimestamp);
-                                    }
-                                })
-                                .then(() => {
-                                    if (inFlightRequests.hasOwnProperty(inFlightIndex)) {
-                                        this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, UPLOADING);
-                                        return this.uploadPolicyFileToBigIP(target.targetHost, target.targetPort, sourcePolicyId, sourcePolicyTimestamp);
-                                    }
-                                })
-                                .then(() => {
-                                    if (inFlightRequests.hasOwnProperty(inFlightIndex)) {
-                                        this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, IMPORTING);
+                                    if (requestedTasks.hasOwnProperty(requestIndex)) {
                                         return this.importPolicyToBigIP(target.targetHost, target.targetPort, sourcePolicyId, targetPolicyName, sourcePolicyTimestamp);
-                                    }
-                                })
-                                .then((targetPolicyId) => {
-                                    if (inFlightRequests.hasOwnProperty(inFlightIndex)) {
-                                        this.logger.info(LOGGINGPREFIX + 'policy ' + targetPolicyName + ' imported as policy ID:' + targetPolicyId + ' on device ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
-                                        this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, APPLYING);
-                                        return this.applyPolicyOnBigIP(target.targetHost, target.targetPort, targetPolicyId);
                                     }
                                 })
                                 .then(() => {
@@ -564,16 +528,16 @@ class TrustedASMPoliciesWorker {
                             throwError.httpStatusCode = 404;
                         } else {
                             const inFlightIndex = `${target.targetHost}:${target.targetPort}:${targetPolicyId}`;
-                            if (Object.keys(inFlightRequests).includes(inFlightIndex)) {
-                                if (inFlightRequests[inFlightIndex].state == ERROR) {
-                                    delete inFlightRequests[inFlightIndex];
+                            if (Object.keys(requestedTasks).includes(inFlightIndex)) {
+                                if (requestedTasks[inFlightIndex].state == ERROR) {
+                                    delete requestedTasks[inFlightIndex];
                                     restOperation.statusCode = 200;
                                     restOperation.body = {
                                         msg: `policy processing removed for policy: ${targetPolicyId} in error state`
                                     };
                                     this.completeRestOperation(restOperation);
                                 } else {
-                                    const throwErr = new Error('can not delete policy while processing. Current policy processing state is:' + inFlightRequests[inFlightIndex].state);
+                                    const throwErr = new Error('can not delete policy while processing. Current policy processing state is:' + requestedTasks[inFlightIndex].state);
                                     throwErr.httpStatusCode = 409;
                                     throw throwErr;
                                 }
@@ -611,15 +575,15 @@ class TrustedASMPoliciesWorker {
             let returnPolicies = [];
             let inFlightPolicyIds = [];
             if (!excludeInFlight) {
-                Object.keys(inFlightRequests).forEach((inFlightIndex) => {
+                Object.keys(requestedTasks).forEach((inFlightIndex) => {
                     if (targetHost != 'localhost') {
                         if (inFlightIndex.startsWith(targetHost + ':' + targetPort)) {
-                            inFlightPolicyIds.push(inFlightRequests[inFlightIndex].id);
-                            returnPolicies.push(inFlightRequests[inFlightIndex]);
+                            inFlightPolicyIds.push(requestedTasks[inFlightIndex].id);
+                            returnPolicies.push(requestedTasks[inFlightIndex]);
                         }
                     } else {
-                        inFlightPolicyIds.push(inFlightRequests[inFlightIndex].id);
-                        returnPolicies.push(inFlightRequests[inFlightIndex]);
+                        inFlightPolicyIds.push(requestedTasks[inFlightIndex].id);
+                        returnPolicies.push(requestedTasks[inFlightIndex]);
                     }
                 });
             }
@@ -668,14 +632,14 @@ class TrustedASMPoliciesWorker {
     updateInflightState(targetHost, targetPort, policyId, state) {
         const inFlightIndex = `${targetHost}:${targetPort}:${policyId}`;
         if (state == FINISHED) {
-            if (inFlightRequests.hasOwnProperty(inFlightIndex)) {
+            if (requestedTasks.hasOwnProperty(inFlightIndex)) {
                 this.logger.info(LOGGINGPREFIX + 'policy processing complete for policy: ' + policyId + ' removing state');
-                delete inFlightRequests[inFlightIndex];
+                delete requestedTasks[inFlightIndex];
             }
         } else {
-            if (!inFlightRequests.hasOwnProperty(inFlightIndex)) {
+            if (!requestedTasks.hasOwnProperty(inFlightIndex)) {
                 this.logger.info(LOGGINGPREFIX + 'initializing policy: ' + policyId + ' processing state to:' + state);
-                inFlightRequests[inFlightIndex] = {
+                requestedTasks[inFlightIndex] = {
                     id: policyId,
                     name: policyId,
                     enforcementMode: 'UNKNOWN',
@@ -683,8 +647,8 @@ class TrustedASMPoliciesWorker {
                     path: 'UNKNOWN'
                 }
             } else {
-                this.logger.info(LOGGINGPREFIX + 'transitioning policy: ' + policyId + ' processing from state:' + inFlightRequests[inFlightIndex].state + ' to state: ' + state);
-                inFlightRequests[inFlightIndex].state = state;
+                this.logger.info(LOGGINGPREFIX + 'transitioning policy: ' + policyId + ' processing from state:' + requestedTasks[inFlightIndex].state + ' to state: ' + state);
+                requestedTasks[inFlightIndex].state = state;
             }
         }
     }
@@ -703,55 +667,38 @@ class TrustedASMPoliciesWorker {
         return new Promise((resolve, reject) => {
             const inFlightExportIndex = `${sourceHost}:${sourcePort}:${policyId}`;
             if (inFlightExports.hasOwnProperty(inFlightExportIndex)) {
-                // wait for existing request to have a taskId
-                const pollExistingTask = () => {
-                    if (inFlightExports[inFlightExportIndex].taskId) {
-                        this.logger.info(LOGGINGPREFIX + 'using previous export task for policyId: ' + policyId + ' taskId: ' + taskId);
-                        this.pollTaskUntilFinished(sourceHost, sourcePort, taskId, 'export')
-                            .then(() => {
-                                resolve(true);
-                            })
-                            .catch((err) => {
-                                reject(err);
-                            })
-                    } else {
-                        this.logger.info(LOGGINGPREFIX + 'waiting for previous export task request for policyId: ' + policyId + ' to get a taskId from ASM');
-                        wait(pollDelay)
-                            .then(() => {
-                                return pollExistingTask();
-                            });
-                    }
-                }
-                setImmediate(pollExistingTask);
+                inFlightExports[inFlightExportIndex].notify.on('downloaded', (policyFile) => {
+                    resolve(policyFile)
+                });
+                inFlightExports[inFlightExportIndex].notify.on('error', (err) => {
+                    reject(err)
+                });
             } else {
+                // there is no existing semaphore... add one..
                 inFlightExports[inFlightExportIndex] = {
-                    'status': REQUESTED,
-                    'taskId': null
+                    notify: new EventEmitter()
                 };
                 const policyFile = this.resolvePolicyFileName(policyId, timestamp);
                 const filePath = `${downloadDirectory}/${policyFile}`;
                 if (fs.existsSync(filePath)) {
                     this.logger.info(LOGGINGPREFIX + 'policy to export: ' + policyId + ' last changed on ' + timestamp + ' is already downloaded. skipping export.')
+                    inFlightExports[inFlightExportIndex].notify.emit('downloaded', policyFile);
+                    delete inFlightExports[inFlightExportIndex];
                     resolve(true);
                 } else {
-                    this.restRequestSender.sendPost(this.getExportRestOp(sourceHost, sourcePort, policyId, timestamp))
-                        .then((response) => {
-                            let task = response.getBody();
-                            if (task.hasOwnProperty('id')) {
-                                this.logger.info(LOGGINGPREFIX + 'exporting policy ' + policyId + ' from ' + sourceHost + ':' + sourcePort);
-                                inFlightExports[inFlightExportIndex].taskId = task.id;
-                                this.pollTaskUntilFinished(sourceHost, sourcePort, task.id, 'export')
-                                    .then(() => {
-                                        delete inFlightExports[inFlightExportIndex];
-                                        resolve(true);
-                                    })
-                                    .catch((err) => {
-                                        delete inFlightExports[inFlightExportIndex];
-                                        reject(err);
-                                    })
-                            } else {
-                                reject(new Error('policy export request did not return a task ID: ' + JSON.stringify(task)));
-                            }
+                    this.exportTaskOnBigIP(sourceHost, sourcePort, policyId, timestamp)
+                        .then(() => {
+                            return this.downloadPolicyFileFromBigIP(sourceHost, sourcePort, policyId, timestamp);
+                        })
+                        .then((policyFile) => {
+                            inFlightExports[inFlightExportIndex].notify.emit('downloaded', policyFile);
+                            delete inFlightExports[inFlightExportIndex];
+                            resolve(true);
+                        })
+                        .catch((err) => {
+                            inFlightExports[inFlightExportIndex].notify.emit('error', err);
+                            delete inFlightExports[inFlightExportIndex];
+                            reject(err);
                         })
                         .catch((err) => {
                             reject(err);
@@ -767,107 +714,120 @@ class TrustedASMPoliciesWorker {
         return new Promise((resolve, reject) => {
             const inFlightImportIndex = `${targetHost}:${targetPort}:${policyId}`;
             if (inFlightImports.hasOwnProperty(inFlightImportIndex)) {
-                // wait for existing request to have a taskId
-                const pollExistingTask = () => {
-                    if (inFlightExports[inFlightExportIndex].taskId) {
-                        this.logger.info(LOGGINGPREFIX + 'using previous import task for policyId: ' + policyId + ' taskId: ' + taskId)
-                        this.pollTaskUntilFinished(targetHost, targetPort, taskId, 'import')
-                            .then(() => {
-                                resolve(true);
-                            })
-                            .catch((err) => {
-                                reject(err);
-                            })
-                    } else {
-                        this.logger.info(LOGGINGPREFIX + 'waiting for previous import task request for policyId: ' + policyId + ' to get a taskId from ASM');
-                        wait(pollDelay)
-                            .then(() => {
-                                return pollExistingTask();
-                            });
-                    }
-                }
-                setImmediate(pollExistingTask);
+                inFlightImports[inFlightImportIndex].notify.on('applied', (targetPolicyId) => {
+                    resolve(targetPolicyId);
+                });
+                inFlightImports[inFlightImportIndex].notify.on('error', (err) => {
+                    reject(err);
+                });
             } else {
                 inFlightImports[inFlightImportIndex] = {
-                    'status': REQUESTED,
-                    'taskId': null
+                    notify: new EventEmitter()
                 };
-                this.restRequestSender.sendPost(this.getImportRestOp(targetHost, targetPort, policyId, policyName, timestamp))
-                    .then((response) => {
-                        let task = response.getBody();
-                        if (task.hasOwnProperty('id')) {
-                            this.logger.info(LOGGINGPREFIX + 'importing policy ' + policyId + ' to ' + targetHost + ':' + targetPort + ' task ID:' + task.id);
-                            inFlightImports[inFlightImportIndex].taskId = task.id;
-                            this.pollTaskUntilFinished(targetHost, targetPort, task.id, 'import')
-                                .then((targetPolicyId) => {
-                                    delete inFlightImports[inFlightImportIndex];
-                                    resolve(targetPolicyId);
-                                })
-                                .catch((err) => {
-                                    delete inFlightImports[inFlightImportIndex];
-                                    reject(err);
-                                })
-                        } else {
-                            reject(new Error('policy import request did not return a task ID: ' + JSON.stringify(task)));
+                this.updateInflightState(targetHost, targetPort, policyId, UPLOADING);
+                this.uploadPolicyFileToBigIP(targetHost, targetPort, policyId, timestamp)
+                    .then(() => {
+                        this.updateInflightState(targetHost, targetPort, policyId, IMPORTING);
+                        return this.importTaskOnBigIP(targetHost, targetPort, policyId, policyName, timestamp);
+                    })
+                    .then((targetPolicyId) => {
+                        if(targetPolicyId != policyId) {
+                            // move URL downloaded policies to ASM assigned Policy ID
+                            const returnPolicy = requestedTasks[`${targetHost}:${targetPort}:${policyId}`];
+                            returnPolicy.id = targetPolicyId;
+                            requestedTasks[`${targetHost}:${targetPort}:${targetPolicyId}`] = returnPolicy;
+                            delete requestedTasks[`${targetHost}:${targetPort}:${policyId}`];
+                            policyId = targetPolicyId;
                         }
+                        this.updateInflightState(targetHost, targetPort, policyId, APPLYING);
+                        return this.applyTaskOnBigIP(targetHost, targetPort, targetPolicyId);
+                    })
+                    .then((targetPolicyId) => {
+                        inFlightImports[inFlightImportIndex].notify.emit('applied', targetPolicyId);
+                        delete inFlightImports[inFlightImportIndex];
+                        resolve(targetPolicyId);
                     })
                     .catch((err) => {
+                        inFlightImports[inFlightImportIndex].notify.emit('error', err);
+                        delete inFlightImports[inFlightImportIndex];
                         reject(err);
                     })
             }
         });
     }
+
     /* jshint ignore:end */
+    exportTaskOnBigIP(sourceHost, sourcePort, policyId, timestamp) {
+        return new Promise((resolve, reject) => {
+            this.logger.info(LOGGINGPREFIX + 'exporting policy ' + policyId + ' from ' + sourceHost + ':' + sourcePort);
+            this.restRequestSender.sendPost(this.getExportRestOp(sourceHost, sourcePort, policyId, timestamp))
+                .then((response) => {
+                    let task = response.getBody();
+                    if (task.hasOwnProperty('id')) {
+                        this.pollTaskUntilFinished(sourceHost, sourcePort, task.id, 'export')
+                            .then(() => {
+                                resolve();
+                            })
+                            .catch((err) => {
+                                reject(err);
+                            });
+                    } else {
+                        reject(new Error('policy export request did not return a task ID: ' + JSON.stringify(task)));
+                    }
+                })
+                .catch((err) => {
+                    reject(err);
+                });
+        });
+    }
+
+
+    /* jshint ignore:end */
+    importTaskOnBigIP(targetHost, targetPort, policyId, policyName, timestamp) {
+        return new Promise((resolve, reject) => {
+            this.restRequestSender.sendPost(this.getImportRestOp(targetHost, targetPort, policyId, policyName, timestamp))
+                .then((response) => {
+                    let task = response.getBody();
+                    if (task.hasOwnProperty('id')) {
+                        this.logger.info(LOGGINGPREFIX + 'importing policy ' + policyId + ' to ' + targetHost + ':' + targetPort + ' task ID:' + task.id);
+                        this.pollTaskUntilFinished(targetHost, targetPort, task.id, 'import')
+                            .then((targetPolicyId) => {
+                                resolve(targetPolicyId);
+                            })
+                            .catch((err) => {
+                                reject(err);
+                            });
+                    } else {
+                        reject(new Error('policy import request did not return a task ID: ' + JSON.stringify(task)));
+                    }
+                })
+                .catch((err) => {
+                    reject(err);
+                });
+        });
+    }
 
     /* jshint ignore:start */
-    applyPolicyOnBigIP(targetHost, targetPort, policyId) {
+    applyTaskOnBigIP(targetHost, targetPort, policyId) {
         return new Promise((resolve, reject) => {
-            const inFlightApplyIndex = `${targetHost}:${targetPort}:${policyId}`;
-            if (inFlightApplies.hasOwnProperty(inFlightApplyIndex)) {
-                // wait for existing request to have a taskId
-                const pollExistingTask = () => {
-                    if (inFlightExports[inFlightExportIndex].taskId) {
-                        this.logger.info(LOGGINGPREFIX + 'using previous apply task for policyId: ' + policyId + ' taskId: ' + taskId)
-                        this.pollTaskUntilFinished(targetHost, targetPort, taskId, 'import')
+            this.restRequestSender.sendPost(this.getApplyPolicyRestOp(targetHost, targetPort, policyId))
+                .then((response) => {
+                    let task = response.getBody();
+                    if (task.hasOwnProperty('id')) {
+                        this.pollTaskUntilFinished(targetHost, targetPort, task.id, 'apply')
                             .then(() => {
-                                resolve(true);
+                                resolve(policyId);
                             })
                             .catch((err) => {
                                 reject(err);
                             })
                     } else {
-                        this.logger.info(LOGGINGPREFIX + 'waiting for previous apply task request for policyId: ' + policyId + ' to get a taskId from ASM');
-                        wait(pollDelay)
-                            .then(() => {
-                                return pollExistingTask();
-                            });
+                        reject(new Error('policy apply request did not return a task ID: ' + JSON.stringify(task)));
                     }
-                }
-            } else {
-                inFlightApplies[inFlightApplyIndex] = {
-                    'status': REQUESTED,
-                    'taskId': null
-                };
-                this.restRequestSender.sendPost(this.getApplyPolicyRestOp(targetHost, targetPort, policyId))
-                    .then((response) => {
-                        let task = response.getBody();
-                        if (task.hasOwnProperty('id')) {
-                            inFlightApplies[inFlightApplyIndex].taskId = task.id;
-                            this.pollTaskUntilFinished(targetHost, targetPort, task.id, 'apply')
-                                .then(() => {
-                                    resolve(true);
-                                })
-                                .catch((err) => {
-                                    reject(err);
-                                })
-                        } else {
-                            reject(new Error('policy apply request did not return a task ID: ' + JSON.stringify(task)));
-                        }
-                    })
-                    .catch((err) => {
-                        reject(err);
-                    })
-            }
+                })
+                .catch((err) => {
+                    reject(err);
+                })
         });
     }
     /* jshint ignore:end */
@@ -1177,7 +1137,7 @@ class TrustedASMPoliciesWorker {
                         if (queryBody.hasOwnProperty('status')) {
                             if (queryBody.status === FINISHED) {
                                 if (queryBody.hasOwnProperty('result') && queryBody.result.hasOwnProperty('policyReference')) {
-                                    returnData = path.basename(queryBody.result.policyReference.link).split('?')[0]; 
+                                    returnData = path.basename(queryBody.result.policyReference.link).split('?')[0];
                                 } else {
                                     returnData = queryBody;
                                 }
@@ -1210,33 +1170,17 @@ class TrustedASMPoliciesWorker {
             const inFlightDownloadIndex = `${sourceUrl}:${policyId}:${timestamp}`;
             try {
                 if (inFlightDownloads.hasOwnProperty(inFlightDownloadIndex)) {
-                    const policyFile = this.resolvePolicyFileName(policyId, timestamp);
-                    const filePath = `${downloadDirectory}/${policyFile}`;
-                    const pollExistingTask = () => {
-                        this.logger.info(LOGGINGPREFIX + 'waiting for previous download request for ' + policyFile);
-                        if (!inFlightDownloads.hasOwnProperty(inFlightDownloadIndex)) {
-                            if (fs.existsSync(filePath)) {
-                                resolve(policyFile);
-                            } else {
-                                const err = new Error('download of policy: ' + policyFile + ' failed');
-                                reject(err);
-                            }
-                        } else {
-                            wait(pollDelay)
-                                .then(() => {
-                                    return pollExistingTask();
-                                });
-                        }
-                    };
-                    setImmediate(pollExistingTask);
+                    inFlightDownloads[inFlightDownloadIndex].notify.on('downloaded', (policyFile) => { resolve(policyFile); });
+                    inFlightDownloads[inFlightDownloadIndex].notify.on('error', (err) => { reject(err); });
                 } else {
                     inFlightDownloads[inFlightDownloadIndex] = {
-                        'status': REQUESTED
+                        notify: new EventEmitter()
                     };
                     const policyFile = this.resolvePolicyFileName(policyId, timestamp);
                     this.logger.info(LOGGINGPREFIX + 'downloading policy file:' + policyFile + ' from url:' + sourceUrl);
                     if (!sourceUrl) {
-                        resolve(false);
+                        const err = new Error('soure URL was not defined');
+                        reject(err);
                     }
                     const filePath = `${downloadDirectory}/${policyFile}`;
                     if (fs.existsSync(filePath)) {
@@ -1249,8 +1193,12 @@ class TrustedASMPoliciesWorker {
                         if (parsedUrl.protocol == 'file:') {
                             try {
                                 copyFile(parsedUrl.pathname, true);
+                                inFlightDownloads[inFlightDownloadIndex].notify.emit('downloaded', policyFile);
+                                delete inFlightDownloads[inFlightDownloadIndex];
                                 resolve(policyFile);
                             } catch (err) {
+                                inFlightDownloads[inFlightDownloadIndex].notify.emit('error', err);
+                                delete inFlightDownloads[inFlightDownloadIndex];
                                 reject(err);
                             }
                         } else if (parsedUrl.protocol == 'http:') {
@@ -1271,6 +1219,7 @@ class TrustedASMPoliciesWorker {
                                                 response.pipe(fws);
                                                 fws.on('finish', () => {
                                                     fws.close();
+                                                    inFlightDownloads[inFlightDownloadIndex].notify.emit('downloaded', policyFile);
                                                     delete inFlightDownloads[inFlightDownloadIndex];
                                                     resolve(policyFile);
                                                 });
@@ -1279,13 +1228,15 @@ class TrustedASMPoliciesWorker {
                                                 this.logger.severe(LOGGINGPREFIX + 'error downloading url ' + redirectUrl + ' - ' + err.message);
                                                 fws.close();
                                                 fs.unlinkSync(filePath);
+                                                inFlightDownloads[inFlightDownloadIndex].notify.emit('error', err);
                                                 delete inFlightDownloads[inFlightDownloadIndex];
-                                                resolve(false);
+                                                reject(err);
                                             });
                                     } else {
                                         response.pipe(fws);
                                         fws.on('finish', () => {
                                             fws.close();
+                                            inFlightDownloads[inFlightDownloadIndex].notify.emit('downloaded', policyFile);
                                             delete inFlightDownloads[inFlightDownloadIndex];
                                             resolve(policyFile);
                                         });
@@ -1295,8 +1246,9 @@ class TrustedASMPoliciesWorker {
                                     this.logger.severe(LOGGINGPREFIX + 'error downloading url ' + sourceUrl + ' - ' + err.message);
                                     fws.close();
                                     fs.unlinkSync(filePath);
+                                    inFlightDownloads[inFlightDownloadIndex].notify.emit('error', err);
                                     delete inFlightDownloads[inFlightDownloadIndex];
-                                    resolve(false);
+                                    reject(err);
                                 });
                             request.end();
                         } else {
@@ -1318,6 +1270,7 @@ class TrustedASMPoliciesWorker {
                                                 response.pipe(fws);
                                                 fws.on('finish', () => {
                                                     fws.close();
+                                                    inFlightDownloads[inFlightDownloadIndex].notify.emit('downloaded', policyFile);
                                                     delete inFlightDownloads[inFlightDownloadIndex];
                                                     resolve(policyFile);
                                                 });
@@ -1326,13 +1279,15 @@ class TrustedASMPoliciesWorker {
                                                 this.logger.severe(LOGGINGPREFIX + 'error downloading url ' + redirectUrl + ' - ' + err.message);
                                                 fws.close();
                                                 fs.unlinkSync(filePath);
+                                                inFlightDownloads[inFlightDownloadIndex].notify.emit('error', policyFile);
                                                 delete inFlightDownloads[inFlightDownloadIndex];
-                                                resolve(false);
+                                                reject(err);
                                             });
                                     } else {
                                         response.pipe(fws);
                                         fws.on('finish', () => {
                                             fws.close();
+                                            inFlightDownloads[inFlightDownloadIndex].notify.emit('downloaded', policyFile);
                                             delete inFlightDownloads[inFlightDownloadIndex];
                                             resolve(policyFile);
                                         });
@@ -1342,6 +1297,7 @@ class TrustedASMPoliciesWorker {
                                     this.logger.severe(LOGGINGPREFIX + 'error downloading url ' + sourceUrl + ' - ' + err.message);
                                     fws.close();
                                     fs.unlinkSync(filePath);
+                                    inFlightDownloads[inFlightDownloadIndex].notify.emit('error', err);
                                     delete inFlightDownloads[inFlightDownloadIndex];
                                     resolve(false);
                                 });
@@ -1349,11 +1305,13 @@ class TrustedASMPoliciesWorker {
                         }
                     } else {
                         const err = 'extension url must use the following protocols:' + JSON.stringify(VALIDDOWNLOADPROTOCOLS);
+                        inFlightDownloads[inFlightDownloadIndex].notify.emit('error', err);
                         delete inFlightDownloads[inFlightDownloadIndex];
                         reject(new Error(err));
                     }
                 }
             } catch (err) {
+                inFlightDownloads[inFlightDownloadIndex].notify.emit('error', err);
                 delete inFlightDownloads[inFlightDownloadIndex];
                 reject(err);
             }
@@ -1365,28 +1323,12 @@ class TrustedASMPoliciesWorker {
             const inFlightDownloadIndex = `${sourceHost}:${sourcePort}:${policyId}:${timestamp}`;
             try {
                 if (inFlightDownloads.hasOwnProperty(inFlightDownloadIndex)) {
-                    const policyFile = this.resolvePolicyFileName(policyId, timestamp);
-                    const filePath = `${downloadDirectory}/${policyFile}`;
-                    const pollExistingTask = () => {
-                        this.logger.info(LOGGINGPREFIX + 'waiting for previous download request for ' + policyFile);
-                        if (!inFlightDownloads.hasOwnProperty(inFlightDownloadIndex)) {
-                            if (fs.existsSync(filePath)) {
-                                resolve(policyFile);
-                            } else {
-                                const err = new Error(LOGGINGPREFIX + 'download of policy: ' + policyFile + ' failed');
-                                reject(err);
-                            }
-                        } else {
-                            wait(pollDelay)
-                                .then(() => {
-                                    return pollExistingTask();
-                                });
-                        }
-                    };
-                    setImmediate(pollExistingTask);
+                    inFlightDownloads[inFlightDownloadIndex].on('downloaded', (policyFile) => { resolve(policyFile); });
+                    inFlightDownloads[inFlightDownloadIndex].on('error', (err) => { reject(err); });
                 } else {
                     inFlightDownloads[inFlightDownloadIndex] = {
-                        'status': REQUESTED
+                        'status': REQUESTED,
+                        'notify': new EventEmitter()
                     };
                     if (!policyId) {
                         resolve(false);
@@ -1417,12 +1359,14 @@ class TrustedASMPoliciesWorker {
                                     this.logger.severe(downloadError.message);
                                     fws.close();
                                     fs.unlinkSync(filePath);
+                                    inFlightDownloads[inFlightDownloadIndex].notify.emit('error', downloadError);
                                     delete inFlightDownloads[inFlightDownloadIndex];
                                     reject(downloadError);
                                 } else {
                                     response.pipe(fws);
                                     fws.on('finish', () => {
                                         fws.close();
+                                        inFlightDownloads[inFlightDownloadIndex].notify.emit('downloaded', policyFile);
                                         delete inFlightDownloads[inFlightDownloadIndex];
                                         resolve(policyFile);
                                     });
@@ -1431,6 +1375,7 @@ class TrustedASMPoliciesWorker {
                                 this.logger.severe(LOGGINGPREFIX + 'error downloading policy ' + policyFile + ' from ' + sourceHost + ':' + sourcePort + ' - ' + err.message);
                                 fws.close();
                                 fs.unlinkSync(filePath);
+                                inFlightDownloads[inFlightDownloadIndex].notify.emit('error', err);
                                 delete inFlightDownloads[inFlightDownloadIndex];
                                 reject(err);
                             });
@@ -1445,6 +1390,7 @@ class TrustedASMPoliciesWorker {
                                         response.pipe(fws);
                                         fws.on('finish', () => {
                                             fws.close();
+                                            inFlightDownloads[inFlightDownloadIndex].notify.emit('downloaded', policyFile);
                                             delete inFlightDownloads[inFlightDownloadIndex];
                                             resolve(policyFile);
                                         });
@@ -1452,8 +1398,9 @@ class TrustedASMPoliciesWorker {
                                         this.logger.severe(LOGGINGPREFIX + 'error downloading policy ' + policyFile + ' from ' + sourceHost + ':' + sourcePort + ' - ' + err.message);
                                         fws.close();
                                         fs.unlinkSync(filePath);
+                                        inFlightDownloads[inFlightDownloadIndex].notify.emit('error', err);
                                         delete inFlightDownloads[inFlightDownloadIndex];
-                                        resolve(false);
+                                        reject(err);
                                     });
                                     request.end();
                                 });
@@ -1461,6 +1408,7 @@ class TrustedASMPoliciesWorker {
                     }
                 }
             } catch (err) {
+                inFlightDownloads[inFlightDownloadIndex].notify.emit('error', err);
                 delete inFlightDownloads[inFlightDownloadIndex];
                 reject(err);
             }
@@ -1596,8 +1544,8 @@ class TrustedASMPoliciesWorker {
 
     clearPolicyFileCache() {
         const inFlightFileNames = [];
-        Object.keys(inFlightRequests).forEach((inFlightIndex) => {
-            const policyState = inFlightRequests[inFlightIndex];
+        Object.keys(requestedTasks).forEach((inFlightIndex) => {
+            const policyState = requestedTasks[inFlightIndex];
             if (policyState.id && policyState.lastChanged) {
                 inFlightFileNames.push(this.resolvePolicyFileName(policyState.id, new Date(policyState.lastChanged).getTime()));
             }
