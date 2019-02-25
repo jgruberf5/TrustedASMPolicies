@@ -75,6 +75,33 @@ if (!Array.prototype.includes) {
     });
 }
 
+const wait = (ms) => new Promise((resolve) => {
+    setTimeout(resolve, ms);
+});
+
+const copyFile = (filePath, symlink) => {
+    const filename = path.basename(filePath);
+    const dest = downloadDirectory + '/' + filename;
+    if (fs.existsSync(filePath)) {
+        try {
+            if (!fs.existsSync(dest)) {
+                if (symlink) {
+                    fs.symlinkSync(filePath, dest);
+                } else {
+                    fs.createReadStream(filePath).pipe(fs.createWriteStream(dest));
+                }
+            }
+            return filename;
+        } catch (err) {
+            throw err;
+        }
+    } else {
+        const err = 'file does not exist ' + filePath;
+        console.error(err);
+        throw Error(err);
+    }
+};
+
 /**
  * Upload Worker
  *
@@ -339,7 +366,6 @@ class TrustedASMPoliciesWorker {
                                 return this.importPolicyToBigIP(target.targetHost, target.targetPort, sourcePolicyId, targetPolicyName, sourcePolicyTimestamp);
                             })
                             .then((newPolicyId) => {
-                                this.updateInflightState(target.targetHost, target.targetPort, newPolicyId, FINISHED);
                                 this.logger.info(LOGGINGPREFIX + 'policy ' + sourcePolicyId + ' with policyId: ' + newPolicyId + ' was imported and applied on ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
                             })
                             .catch((err) => {
@@ -447,7 +473,6 @@ class TrustedASMPoliciesWorker {
                                     }
                                 })
                                 .then(() => {
-                                    this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, FINISHED);
                                     this.logger.info(LOGGINGPREFIX + 'policy ' + sourcePolicyId + ' imported and applied on ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
                                 })
                                 .catch((err) => {
@@ -743,6 +768,7 @@ class TrustedASMPoliciesWorker {
                         return this.applyTaskOnBigIP(targetHost, targetPort, targetPolicyId);
                     })
                     .then((targetPolicyId) => {
+                        this.updateInflightState(targetHost, targetPort, policyId, FINISHED);
                         inFlightImports[inFlightImportIndex].notify.emit('applied', targetPolicyId);
                         delete inFlightImports[inFlightImportIndex];
                         resolve(targetPolicyId);
@@ -1327,7 +1353,6 @@ class TrustedASMPoliciesWorker {
                     inFlightDownloads[inFlightDownloadIndex].on('error', (err) => { reject(err); });
                 } else {
                     inFlightDownloads[inFlightDownloadIndex] = {
-                        'status': REQUESTED,
                         'notify': new EventEmitter()
                     };
                     if (!policyId) {
@@ -1602,32 +1627,5 @@ class TrustedASMPoliciesWorker {
         });
     }
 }
-
-const wait = (ms) => new Promise((resolve) => {
-    setTimeout(resolve, ms);
-});
-
-const copyFile = (filePath, symlink) => {
-    const filename = path.basename(filePath);
-    const dest = downloadDirectory + '/' + filename;
-    if (fs.existsSync(filePath)) {
-        try {
-            if (!fs.existsSync(dest)) {
-                if (symlink) {
-                    fs.symlinkSync(filePath, dest);
-                } else {
-                    fs.createReadStream(filePath).pipe(fs.createWriteStream(dest));
-                }
-            }
-            return filename;
-        } catch (err) {
-            throw err;
-        }
-    } else {
-        const err = 'file does not exist ' + filePath;
-        console.error(err);
-        throw Error(err);
-    }
-};
 
 module.exports = TrustedASMPoliciesWorker;
