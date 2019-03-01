@@ -218,29 +218,24 @@ class TrustedASMPoliciesWorker {
                     this.getPoliciesOnBigIP(target.targetHost, target.targetPort)
                         .then((policies) => {
                             if (policyName || policyId) {
-                                let policyFound = false;
+                                let returnPolicies = [];
                                 policies.forEach((policy) => {
-                                    if (!policyFound) {
-                                        if (policyName && policy.name.startsWith(policyName)) {
-                                            restOperation.statusCode = 200;
-                                            restOperation.setContentType('application/json');
-                                            restOperation.body = policy;
-                                            this.completeRestOperation(restOperation);
-                                            policyFound = true;
-                                        }
-                                        if (policyId && policy.id == policyId) {
-                                            restOperation.statusCode = 200;
-                                            restOperation.setContentType('application/json');
-                                            restOperation.body = policy;
-                                            this.completeRestOperation(restOperation);
-                                            policyFound = true;
-                                        }
+                                    if (policyName && policy.name.startsWith(policyName)) {
+                                        returnPolicies.push(policy);
+                                    }
+                                    if (policyId && policy.id == policyId) {
+                                        returnPolicies.push(policy);
                                     }
                                 });
-                                if (!policyFound) {
+                                if (returnPolicies.length == 0) {
                                     const err = new Error(`no policy with matching policyName or policyId found.`);
                                     err.httpStatusCode = 404;
                                     restOperation.fail(err);
+                                } else {
+                                    restOperation.statusCode = 200;
+                                    restOperation.setContentType('application/json');
+                                    restOperation.body = returnPolicies;
+                                    this.completeRestOperation(restOperation);
                                 }
                             } else {
                                 restOperation.statusCode = 200;
