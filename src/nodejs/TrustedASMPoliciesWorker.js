@@ -3,6 +3,7 @@
 'use strict';
 
 const fs = require('fs');
+const convert = require('xml-js');
 const http = require('http');
 const https = require('https');
 const url = require('url');
@@ -20,7 +21,7 @@ const UPLOADING = 'UPLOADING';
 const IMPORTING = 'IMPORTING';
 const APPLYING = 'APPLYING';
 const FINISHED = 'COMPLETED';
-const FAILED = 'FAILURE';
+const FAILURE = 'FAILURE';
 const ERROR = 'ERROR';
 const UNDISCOVERED = 'UNDISCOVERED';
 const UNKNOWN = 'UNKNOWN';
@@ -361,6 +362,9 @@ class TrustedASMPoliciesWorker {
                         requestedTasks[requestIndex] = returnPolicy;
                         this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, EXPORTING);
                         this.downloadPolicyFile(sourceUrl, sourcePolicyId, sourcePolicyTimestamp)
+                            .then((policyFile) => {
+                                return this.validateFileIsValidASMPolicy(policyFile, target.targetVersion);
+                            })
                             .then(() => {
                                 delete requestedTasks[requestIndex];
                                 return this.getPoliciesOnBigIP(target.targetHost, target.targetPort);
@@ -428,88 +432,96 @@ class TrustedASMPoliciesWorker {
 
                     this.validateTarget(targetDevice)
                         .then((target) => {
-                            this.getPoliciesOnBigIP(source.targetHost, source.targetPort)
-                                .then((sourcePolicies) => {
-                                    sourcePolicies.forEach((sourcePolicy) => {
-                                        if ((policyId && sourcePolicy.id == policyId) || (policyName && policyName == sourcePolicy.name)) {
-                                            sourcePolicyId = sourcePolicy.id;
-                                            sourcePolicyName = sourcePolicy.name;
-                                            sourcePolicyLastChanged = sourcePolicy.lastChanged;
-                                            sourcePolicyTimestamp = new Date(sourcePolicy.lastChanged).getTime();
-                                            // initialize inflight state for this request
-                                            requestIndex = `${target.targetHost}:${target.targetPort}:${sourcePolicyId}`;
-                                            let returnPolicy = {
-                                                id: sourcePolicy.id,
-                                                name: targetPolicyName,
-                                                enforcementMode: sourcePolicy.enforcementMode,
-                                                lastChanged: sourcePolicy.lastChanged,
-                                                lastChange: sourcePolicy.lastChange,
-                                                state: REQUESTED,
-                                                path: sourcePolicy.path
-                                            };
-                                            requestedTasks[requestIndex] = returnPolicy;
+                            if (this.validateTMOSCompatibility(source.targetVersion, target.targetVersion)) {
+                                this.getPoliciesOnBigIP(source.targetHost, source.targetPort)
+                                    .then((sourcePolicies) => {
+                                        sourcePolicies.forEach((sourcePolicy) => {
+                                            if ((policyId && sourcePolicy.id == policyId) || (policyName && policyName == sourcePolicy.name)) {
+                                                sourcePolicyId = sourcePolicy.id;
+                                                sourcePolicyName = sourcePolicy.name;
+                                                sourcePolicyLastChanged = sourcePolicy.lastChanged;
+                                                sourcePolicyTimestamp = new Date(sourcePolicy.lastChanged).getTime();
+                                                // initialize inflight state for this request
+                                                requestIndex = `${target.targetHost}:${target.targetPort}:${sourcePolicyId}`;
+                                                let returnPolicy = {
+                                                    id: sourcePolicy.id,
+                                                    name: targetPolicyName,
+                                                    enforcementMode: sourcePolicy.enforcementMode,
+                                                    lastChanged: sourcePolicy.lastChanged,
+                                                    lastChange: sourcePolicy.lastChange,
+                                                    state: REQUESTED,
+                                                    path: sourcePolicy.path
+                                                };
+                                                requestedTasks[requestIndex] = returnPolicy;
+                                            }
+                                        });
+                                        if (!sourcePolicyName) {
+                                            const throwErr = new Error(`source policy ${policyName} could not be found on ${source.targetHost}:${source.targetPort}`);
+                                            this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, ERROR);
+                                            throw throwErr;
+                                        } else {
+                                            this.logger.info(LOGGINGPREFIX + 'request made to transfer and import source policy ' + sourcePolicyName + ' as ' + targetPolicyName + ' from source device ' + source.targetUUID + ' ' + source.targetHost + ":" + source.targetPort + ' to target device ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
+                                            this.logger.info(LOGGINGPREFIX + 'source policy ' + sourcePolicyName + ' was found on source device as policy id: ' + sourcePolicyId + ' last changed: ' + sourcePolicyLastChanged);
+                                            this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, QUERYING);
+                                            return this.getPoliciesOnBigIP(target.targetHost, target.targetPort, true);
                                         }
-                                    });
-                                    if (!sourcePolicyName) {
-                                        const throwErr = new Error(`source policy ${policyName} could not be found on ${source.targetHost}:${source.targetPort}`);
-                                        this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, ERROR);
-                                        throw throwErr;
-                                    } else {
-                                        this.logger.info(LOGGINGPREFIX + 'request made to transfer and import source policy ' + sourcePolicyName + ' as ' + targetPolicyName + ' from source device ' + source.targetUUID + ' ' + source.targetHost + ":" + source.targetPort + ' to target device ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
-                                        this.logger.info(LOGGINGPREFIX + 'source policy ' + sourcePolicyName + ' was found on source device as policy id: ' + sourcePolicyId + ' last changed: ' + sourcePolicyLastChanged);
-                                        this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, QUERYING);
-                                        return this.getPoliciesOnBigIP(target.targetHost, target.targetPort, true);
-                                    }
-                                })
-                                .then((targetPolicies) => {
-                                    let needToRemove = false;
-                                    targetPolicies.forEach((targetPolicy) => {
-                                        if (targetPolicyName == targetPolicy.name && sourcePolicyLastChanged == targetPolicy.lastChanged) {
-                                            // the policy WAS found on the target device and it is the same exact policy version.. no further processing needed
-                                            this.logger.info(LOGGINGPREFIX + 'requested policy name:' + targetPolicyName + ' lastChanged:' + targetPolicy.lastChanged + ' already exists on target device:' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
-                                            this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, FINISHED);
-                                        } else if (targetPolicyName == targetPolicy.name) {
-                                            // the policy WAS found on the target device, but it was another version, flag the policy for removal
-                                            this.logger.info(LOGGINGPREFIX + 'requested policy name:' + targetPolicyName + ' was found on the target device but the lastChanged timestamps (source: ' + sourcePolicyLastChanged + ' target: ' + targetPolicy.lastChanged + ') were not the same. removing policy from target device.');
-                                            needToRemove = true;
+                                    })
+                                    .then((targetPolicies) => {
+                                        let needToRemove = false;
+                                        let targetPolicyId = null;
+                                        targetPolicies.forEach((targetPolicy) => {
+                                            if (targetPolicyName == targetPolicy.name && sourcePolicyLastChanged == targetPolicy.lastChanged) {
+                                                // the policy WAS found on the target device and it is the same exact policy version.. no further processing needed
+                                                this.logger.info(LOGGINGPREFIX + 'requested policy name:' + targetPolicyName + ' lastChanged:' + targetPolicy.lastChanged + ' already exists on target device:' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
+                                                this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, FINISHED);
+                                            } else if (targetPolicyName == targetPolicy.name) {
+                                                // the policy WAS found on the target device, but it was another version, flag the policy for removal
+                                                this.logger.info(LOGGINGPREFIX + 'requested policy name:' + targetPolicyName + ' was found on the target device but the lastChanged timestamps (source: ' + sourcePolicyLastChanged + ' target: ' + targetPolicy.lastChanged + ') were not the same. removing policy from target device.');
+                                                needToRemove = true;
+                                                targetPolicyId = targetPolicy.id;
+                                            }
+                                        });
+                                        if (needToRemove) {
+                                            // the policy on the target device was not the right version, delete it and continue processing
+                                            this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, REMOVING);
+                                            return this.deletePolicyOnBigIP(target.targetHost, target.targetPort, targetPolicyId);
                                         }
+                                    })
+                                    .then(() => {
+                                        // if I have not submitted the FINISHED state, export the policy from the source device and download
+                                        if (requestedTasks.hasOwnProperty(requestIndex)) {
+                                            this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, EXPORTING);
+                                            return this.exportPolicyFromBigIP(source.targetHost, source.targetPort, sourcePolicyId, sourcePolicyTimestamp);
+                                        }
+                                    })
+                                    .then(() => {
+                                        if (requestedTasks.hasOwnProperty(requestIndex)) {
+                                            return this.importPolicyToBigIP(target.targetHost, target.targetPort, sourcePolicyId, targetPolicyName, sourcePolicyTimestamp);
+                                        }
+                                    })
+                                    .then(() => {
+                                        this.logger.info(LOGGINGPREFIX + 'policy ' + sourcePolicyId + ' imported and applied on ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
+                                    })
+                                    .catch((err) => {
+                                        this.logger.severe(LOGGINGPREFIX + 'error processing ASM policy - ' + err.message);
                                     });
-                                    if (needToRemove) {
-                                        // the policy on the target device was not the right version, delete it and continue processing
-                                        this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, REMOVING);
-                                        return this.deletePolicyOnBigIP(target.targetHost, target.targetPort, sourcePolicyId);
-                                    }
-                                })
-                                .then(() => {
-                                    // if I have not submitted the FINISHED state, export the policy from the source device and download
-                                    if (requestedTasks.hasOwnProperty(requestIndex)) {
-                                        this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, EXPORTING);
-                                        return this.exportPolicyFromBigIP(source.targetHost, source.targetPort, sourcePolicyId, sourcePolicyTimestamp);
-                                    }
-                                })
-                                .then(() => {
-                                    if (requestedTasks.hasOwnProperty(requestIndex)) {
-                                        return this.importPolicyToBigIP(target.targetHost, target.targetPort, sourcePolicyId, targetPolicyName, sourcePolicyTimestamp);
-                                    }
-                                })
-                                .then(() => {
-                                    this.logger.info(LOGGINGPREFIX + 'policy ' + sourcePolicyId + ' imported and applied on ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
-                                })
-                                .catch((err) => {
-                                    this.logger.severe(LOGGINGPREFIX + 'error processing ASM policy - ' + err.message);
-                                });
-                            restOperation.statusCode = 202;
-                            restOperation.setContentType('application/json');
-                            restOperation.body = {
-                                id: targetPolicyName,
-                                name: targetPolicyName,
-                                enforcementMode: UNKNOWN,
-                                lastChanged: UNKNOWN,
-                                lastChange: UNKNOWN,
-                                state: REQUESTED,
-                                path: UNKNOWN
-                            };
-                            this.completeRestOperation(restOperation);
+                                restOperation.statusCode = 202;
+                                restOperation.setContentType('application/json');
+                                restOperation.body = {
+                                    id: targetPolicyName,
+                                    name: targetPolicyName,
+                                    enforcementMode: UNKNOWN,
+                                    lastChanged: UNKNOWN,
+                                    lastChange: UNKNOWN,
+                                    state: REQUESTED,
+                                    path: UNKNOWN
+                                };
+                                this.completeRestOperation(restOperation);
+                            } else {
+                                const err = new Error('TMOS versions are incompatible for ASM policy migration');
+                                err.httpStatusCode = 400;
+                                restOperation.fail(err);
+                            }
                         })
                         .catch((err) => {
                             err.httpStatusCode = 400;
@@ -586,13 +598,14 @@ class TrustedASMPoliciesWorker {
                                     throwErr.httpStatusCode = 409;
                                     throw throwErr;
                                 }
-                            }
-                            if (targetPolicyState == AVAILABLE || targetPolicyState == INACTIVE) {
-                                return this.deletePolicyOnBigIP(target.targetHost, target.targetPort, targetPolicyId);
                             } else {
-                                const throwErr = new Error('can not delete policy on target: ' + target.targetHost + ":" + target.targetPort + ' - policy state is:' + targetPolicyState);
-                                throwErr.httpStatusCode = 409;
-                                throw throwErr;
+                                if (targetPolicyState == AVAILABLE || targetPolicyState == INACTIVE) {
+                                    return this.deletePolicyOnBigIP(target.targetHost, target.targetPort, targetPolicyId);
+                                } else {
+                                    const throwErr = new Error('can not delete policy on target: ' + target.targetHost + ":" + target.targetPort + ' - policy state is:' + targetPolicyState);
+                                    throwErr.httpStatusCode = 409;
+                                    throw throwErr;
+                                }
                             }
                         }
                     })
@@ -707,6 +720,48 @@ class TrustedASMPoliciesWorker {
         return POLICYFILEPREFIX + '_' + policyId + '_' + timestamp + '.xml';
     }
 
+    getPolicyVersionFromFile(policyFile) {
+        const filePath = `${downloadDirectory}/${policyFile}`;
+        try {
+            const policyXML = fs.readFileSync(filePath, 'utf8');
+            const policyObj = convert.xml2js(policyXML, {
+                compact: true
+            });
+            return policyObj.policy._attributes.bigip_version;
+        } catch (err) {
+            this.logger.severe(LOGGINGPREFIX + 'file ' + policyFile + ' is not a valid ASM policy... deleting.');
+            try {
+                fs.unlinkSync(filePath);
+            } catch (err) {
+                this.logger.severe(LOGGINGPREFIX + ' could not delete file ' + policyFile + ' - ' + err.message);
+            }
+        }
+    }
+
+    validateTMOSCompatibility(sourceVersion, targetVersion) {
+        if (sourceVersion.split('.')[0] == targetVersion.split('.')[0]) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    validateFileIsValidASMPolicy(policyFile, targetVersion) {
+        return new Promise((resolve, reject) => {
+            try {
+                const policyVersion = this.getPolicyVersionFromFile(policyFile);
+                if (this.validateTMOSCompatibility(policyVersion, targetVersion)) {
+                    resolve(true);
+                } else {
+                    const err = new Error('policy XML file TMOS version:' + policyVersion + ' is not compatible with ASM on ' + targetVersion);
+                    reject(err);
+                }
+            } catch (err) {
+                reject(err);
+            }
+        });
+    }
+
     /* jshint ignore:start */
     exportPolicyFromBigIP(sourceHost, sourcePort, policyId, timestamp) {
         return new Promise((resolve, reject) => {
@@ -776,7 +831,7 @@ class TrustedASMPoliciesWorker {
                         return this.importTaskOnBigIP(targetHost, targetPort, policyId, policyName, timestamp);
                     })
                     .then((targetPolicyId) => {
-                        if(targetPolicyId != policyId) {
+                        if (targetPolicyId != policyId) {
                             // move URL downloaded policies to ASM assigned Policy ID
                             const returnPolicy = requestedTasks[`${targetHost}:${targetPort}:${policyId}`];
                             returnPolicy.id = targetPolicyId;
@@ -1005,23 +1060,71 @@ class TrustedASMPoliciesWorker {
         return op;
     }
 
-    getTaskStatusRestOp(targetHost, targetPort, taskId, type) {
-        let protocol = 'https';
-        if (targetHost == 'localhost') {
-            protocol = 'http';
-        }
-        const destUri = `${protocol}://${targetHost}:${targetPort}/mgmt/tm/asm/tasks/${type}-policy/${taskId}`;
-        this.logger.info(LOGGINGPREFIX + 'retrieving task status for ' + destUri);
-        const op = this.restOperationFactory.createRestOperationInstance()
-            .setUri(url.parse(destUri))
-            .setContentType("application/json");
-        if (targetHost == 'localhost') {
-            op.setBasicAuthorization(localauth);
-            op.setIsSetBasicAuthHeader(true);
-        } else {
-            op.setIdentifiedDeviceRequest(true);
-        }
-        return op;
+    getTaskStatus(targetHost, targetPort, taskId, type) {
+        return new Promise((resolve, reject) => {
+            let options = {
+                host: targetHost,
+                port: targetPort,
+                path: `/mgmt/tm/asm/tasks/${type}-policy/${taskId}`,
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            };
+            this.logger.info(LOGGINGPREFIX + 'retrieving task status for ' + targetHost + ":" + targetPort + ' path ' + options.path);
+            if (targetHost == 'localhost') {
+                options.port = 8100;
+                options.headers = {
+                    'Content-Type': 'application/json',
+                    'Authorization': localauth
+                };
+                let request = http.request(options, (response) => {
+                        let body = '';
+                        response.on('data', (data) => {
+                                body += data;
+                            })
+                            .on('end', () => {
+                                if (response.statusCode >= 400) {
+                                    const err = new Error(response.body);
+                                    err.httpStatusCode = response.statusCode;
+                                    reject(err);
+                                } else {
+                                    resolve(JSON.parse(body));
+                                }
+                            });
+                    })
+                    .on('error', (err) => {
+                        reject(err);
+                    });
+                request.end();
+            } else {
+                this.getToken(targetHost)
+                    .then((JSONToken) => {
+                        const token = JSON.parse(JSONToken);
+                        options.path = `${options.path}?${token.queryParam}`;
+                        process.env["NODE_TLS_REJECT_UNAUTHORIZED"] = 0; // jshint ignore:line
+                        let request = https.request(options, (response) => {
+                                let body = '';
+                                response.on('data', (data) => {
+                                        body += data;
+                                    })
+                                    .on('end', () => {
+                                        if (response.statusCode >= 400) {
+                                            const err = new Error(response.body);
+                                            err.httpStatusCode = response.statusCode;
+                                            reject(err);
+                                        } else {
+                                            resolve(JSON.parse(body));
+                                        }
+                                    });
+                            })
+                            .on('error', (err) => {
+                                reject(err);
+                            });
+                        request.end();
+                    });
+            }
+        });
     }
 
     getDeleteTaskRestOp(targetHost, targetPort, taskId, type) {
@@ -1140,6 +1243,8 @@ class TrustedASMPoliciesWorker {
                                             targetHost: device.address,
                                             targetPort: device.httpsPort,
                                             targetUUID: device.machineId,
+                                            targetHostname: device.hostname,
+                                            targetVersion: device.version,
                                             state: device.state
                                         };
                                         devices.push(returnDevice);
@@ -1177,26 +1282,25 @@ class TrustedASMPoliciesWorker {
             let returnData = {};
 
             const poll = () => {
-                this.restRequestSender.sendGet(this.getTaskStatusRestOp(targetHost, targetPort, taskId, type))
-                    .then((response) => {
-                        const queryBody = response.getBody();
-                        if (queryBody.hasOwnProperty('status')) {
-                            if (queryBody.status === FINISHED) {
-                                if (queryBody.hasOwnProperty('result') && queryBody.result.hasOwnProperty('policyReference')) {
-                                    returnData = path.basename(queryBody.result.policyReference.link).split('?')[0];
+                this.getTaskStatus(targetHost, targetPort, taskId, type)
+                    .then((responseBody) => {
+                        if (responseBody.hasOwnProperty('status')) {
+                            if (responseBody.status === FINISHED) {
+                                if (responseBody.hasOwnProperty('result') && responseBody.result.hasOwnProperty('policyReference')) {
+                                    returnData = path.basename(responseBody.result.policyReference.link).split('?')[0];
                                 } else {
-                                    returnData = queryBody;
+                                    returnData = responseBody;
                                 }
                                 resolve(returnData);
-                            } else if (queryBody.status === FAILED) {
-                                reject(new Error('Task failed returning ' + JSON.stringify(queryBody)));
+                            } else if (responseBody.status === FAILURE) {
+                                reject(new Error('Task failed returning ' + JSON.stringify(responseBody)));
                             } else {
                                 wait(pollDelay)
                                     .then(() => {
                                         if (new Date().getTime() < stop) {
                                             poll();
                                         } else {
-                                            reject(new Error('policy task did not reach ' + FINISHED + ' status within timeout. Instead returned: ' + JSON.stringify(queryBody)));
+                                            reject(new Error('policy task did not reach ' + FINISHED + ' status within timeout. Instead returned: ' + JSON.stringify(responseBody)));
                                         }
                                     });
                             }
@@ -1216,8 +1320,12 @@ class TrustedASMPoliciesWorker {
             const inFlightDownloadIndex = `${sourceUrl}:${policyId}:${timestamp}`;
             try {
                 if (inFlightDownloads.hasOwnProperty(inFlightDownloadIndex)) {
-                    inFlightDownloads[inFlightDownloadIndex].notify.on('downloaded', (policyFile) => { resolve(policyFile); });
-                    inFlightDownloads[inFlightDownloadIndex].notify.on('error', (err) => { reject(err); });
+                    inFlightDownloads[inFlightDownloadIndex].notify.on('downloaded', (policyFile) => {
+                        resolve(policyFile);
+                    });
+                    inFlightDownloads[inFlightDownloadIndex].notify.on('error', (err) => {
+                        reject(err);
+                    });
                 } else {
                     inFlightDownloads[inFlightDownloadIndex] = {
                         notify: new EventEmitter()
@@ -1369,8 +1477,12 @@ class TrustedASMPoliciesWorker {
             const inFlightDownloadIndex = `${sourceHost}:${sourcePort}:${policyId}:${timestamp}`;
             try {
                 if (inFlightDownloads.hasOwnProperty(inFlightDownloadIndex)) {
-                    inFlightDownloads[inFlightDownloadIndex].on('downloaded', (policyFile) => { resolve(policyFile); });
-                    inFlightDownloads[inFlightDownloadIndex].on('error', (err) => { reject(err); });
+                    inFlightDownloads[inFlightDownloadIndex].on('downloaded', (policyFile) => {
+                        resolve(policyFile);
+                    });
+                    inFlightDownloads[inFlightDownloadIndex].on('error', (err) => {
+                        reject(err);
+                    });
                 } else {
                     inFlightDownloads[inFlightDownloadIndex] = {
                         'notify': new EventEmitter()
