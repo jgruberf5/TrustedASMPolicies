@@ -513,7 +513,7 @@ class TrustedASMPoliciesWorker {
                                 };
                                 this.completeRestOperation(restOperation);
                             } else {
-                                const err = new Error('TMOS versions are incompatible for ASM policy migration');
+                                const err = new Error('Policy TMOS version:' + source.targetVersion + ' is not compatible with ASM on ' + target.targetVersion);
                                 err.httpStatusCode = 400;
                                 restOperation.fail(err);
                             }
@@ -730,6 +730,7 @@ class TrustedASMPoliciesWorker {
             } catch (err) {
                 this.logger.severe(LOGGINGPREFIX + ' could not delete file ' + policyFile + ' - ' + err.message);
             }
+            return "0.0";
         }
     }
 
