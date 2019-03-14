@@ -390,10 +390,10 @@ class TrustedASMPoliciesWorker {
                             .catch((err) => {
                                 if (requestedTasks.hasOwnProperty(requestIndex)) {
                                     this.logger.severe(LOGGINGPREFIX + 'error processing ASM policy in state:' + requestedTasks[requestIndex].state + ' - ' + err.message);
-                                    this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, ERROR);
+                                    this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, ERROR, err.message);
                                 } else {
                                     this.logger.severe(LOGGINGPREFIX + 'error after applying ASM policy - ' + err.message);
-                                    this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, ERROR);
+                                    this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, ERROR, err.message);
                                 }
                             });
                         restOperation.statusCode = 202;
@@ -452,7 +452,7 @@ class TrustedASMPoliciesWorker {
                                         });
                                         if (!sourcePolicyName) {
                                             const throwErr = new Error(`source policy ${policyName} could not be found on ${source.targetHost}:${source.targetPort}`);
-                                            this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, ERROR);
+                                            this.updateInflightState(target.targetHost, target.targetPort, sourcePolicyId, ERROR, throwErr.message);
                                             throw throwErr;
                                         } else {
                                             this.logger.info(LOGGINGPREFIX + 'request made to transfer and import source policy ' + sourcePolicyName + ' as ' + targetPolicyName + ' from source device ' + source.targetUUID + ' ' + source.targetHost + ":" + source.targetPort + ' to target device ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
@@ -682,7 +682,7 @@ class TrustedASMPoliciesWorker {
     }
 
     /* jshint ignore:start */
-    updateInflightState(targetHost, targetPort, policyId, state) {
+    updateInflightState(targetHost, targetPort, policyId, state, errMessage) {
         const inFlightIndex = `${targetHost}:${targetPort}:${policyId}`;
         if (state == FINISHED) {
             if (requestedTasks.hasOwnProperty(inFlightIndex)) {
@@ -702,6 +702,9 @@ class TrustedASMPoliciesWorker {
             } else {
                 this.logger.info(LOGGINGPREFIX + 'transitioning policy: ' + policyId + ' processing from state:' + requestedTasks[inFlightIndex].state + ' to state: ' + state);
                 requestedTasks[inFlightIndex].state = state;
+            }
+            if(state == ERROR) {
+                requestedTasks[inFlightIndex].errMessage = errMessage;
             }
         }
     }
@@ -735,8 +738,12 @@ class TrustedASMPoliciesWorker {
     }
 
     validateTMOSCompatibility(sourceVersion, targetVersion) {
-        if (sourceVersion.split('.')[0] == targetVersion.split('.')[0]) {
-            return true;
+        if (sourceVersion && targetVersion) {
+            if (sourceVersion.split('.')[0] == targetVersion.split('.')[0]) {
+                return true;
+            } else {
+                return false;
+            }
         } else {
             return false;
         }
@@ -766,7 +773,7 @@ class TrustedASMPoliciesWorker {
                 inFlightExports[inFlightExportIndex].notify.on('downloaded', (policyFile) => {
                     resolve(policyFile)
                 });
-                inFlightExports[inFlightExportIndex].notify.on('error', (err) => {
+                inFlightExports[inFlightExportIndex].notify.on('exportError', (err) => {
                     reject(err)
                 });
             } else {
@@ -792,7 +799,7 @@ class TrustedASMPoliciesWorker {
                             resolve(true);
                         })
                         .catch((err) => {
-                            inFlightExports[inFlightExportIndex].notify.emit('error', err);
+                            inFlightExports[inFlightExportIndex].notify.emit('exportError', err);
                             delete inFlightExports[inFlightExportIndex];
                             reject(err);
                         })
@@ -813,7 +820,7 @@ class TrustedASMPoliciesWorker {
                 inFlightImports[inFlightImportIndex].notify.on('applied', (targetPolicyId) => {
                     resolve(targetPolicyId);
                 });
-                inFlightImports[inFlightImportIndex].notify.on('error', (err) => {
+                inFlightImports[inFlightImportIndex].notify.on('importError', (err) => {
                     reject(err);
                 });
             } else {
@@ -845,7 +852,7 @@ class TrustedASMPoliciesWorker {
                         resolve(targetPolicyId);
                     })
                     .catch((err) => {
-                        inFlightImports[inFlightImportIndex].notify.emit('error', err);
+                        inFlightImports[inFlightImportIndex].notify.emit('importError', err);
                         delete inFlightImports[inFlightImportIndex];
                         reject(err);
                     })
@@ -1319,7 +1326,7 @@ class TrustedASMPoliciesWorker {
                     inFlightDownloads[inFlightDownloadIndex].notify.on('downloaded', (policyFile) => {
                         resolve(policyFile);
                     });
-                    inFlightDownloads[inFlightDownloadIndex].notify.on('error', (err) => {
+                    inFlightDownloads[inFlightDownloadIndex].notify.on('downloadError', (err) => {
                         reject(err);
                     });
                 } else {
@@ -1347,7 +1354,7 @@ class TrustedASMPoliciesWorker {
                                 delete inFlightDownloads[inFlightDownloadIndex];
                                 resolve(policyFile);
                             } catch (err) {
-                                inFlightDownloads[inFlightDownloadIndex].notify.emit('error', err);
+                                inFlightDownloads[inFlightDownloadIndex].notify.emit('downloadError', err);
                                 delete inFlightDownloads[inFlightDownloadIndex];
                                 reject(err);
                             }
@@ -1378,7 +1385,7 @@ class TrustedASMPoliciesWorker {
                                                 this.logger.severe(LOGGINGPREFIX + 'error downloading url ' + redirectUrl + ' - ' + err.message);
                                                 fws.close();
                                                 fs.unlinkSync(filePath);
-                                                inFlightDownloads[inFlightDownloadIndex].notify.emit('error', err);
+                                                inFlightDownloads[inFlightDownloadIndex].notify.emit('downloadError', err);
                                                 delete inFlightDownloads[inFlightDownloadIndex];
                                                 reject(err);
                                             });
@@ -1386,9 +1393,20 @@ class TrustedASMPoliciesWorker {
                                         response.pipe(fws);
                                         fws.on('finish', () => {
                                             fws.close();
-                                            inFlightDownloads[inFlightDownloadIndex].notify.emit('downloaded', policyFile);
-                                            delete inFlightDownloads[inFlightDownloadIndex];
-                                            resolve(policyFile);
+                                            if (response.statusCode < 300) {
+                                                inFlightDownloads[inFlightDownloadIndex].notify.emit('downloaded', policyFile);
+                                                delete inFlightDownloads[inFlightDownloadIndex];
+                                                resolve(policyFile);
+                                            } else {
+                                                const downloadError = new Error(LOGGINGPREFIX + 'error downloading url ' + sourceUrl + ' - ' + response.statusCode);
+                                                this.logger.severe(downloadError.message);
+                                                if(fs.existsSync(filePath)) {
+                                                    fs.unlinkSync(filePath);
+                                                }
+                                                inFlightDownloads[inFlightDownloadIndex].notify.emit('downloadError', downloadError);
+                                                delete inFlightDownloads[inFlightDownloadIndex];
+                                                reject(downloadError);
+                                            }
                                         });
                                     }
                                 })
@@ -1396,7 +1414,7 @@ class TrustedASMPoliciesWorker {
                                     this.logger.severe(LOGGINGPREFIX + 'error downloading url ' + sourceUrl + ' - ' + err.message);
                                     fws.close();
                                     fs.unlinkSync(filePath);
-                                    inFlightDownloads[inFlightDownloadIndex].notify.emit('error', err);
+                                    inFlightDownloads[inFlightDownloadIndex].notify.emit('downloadError', err);
                                     delete inFlightDownloads[inFlightDownloadIndex];
                                     reject(err);
                                 });
@@ -1428,8 +1446,10 @@ class TrustedASMPoliciesWorker {
                                             .on('error', (err) => {
                                                 this.logger.severe(LOGGINGPREFIX + 'error downloading url ' + redirectUrl + ' - ' + err.message);
                                                 fws.close();
-                                                fs.unlinkSync(filePath);
-                                                inFlightDownloads[inFlightDownloadIndex].notify.emit('error', policyFile);
+                                                if(fs.existsSync(filePath)) {
+                                                    fs.unlinkSync(filePath);
+                                                }
+                                                inFlightDownloads[inFlightDownloadIndex].notify.emit('downloadError', policyFile);
                                                 delete inFlightDownloads[inFlightDownloadIndex];
                                                 reject(err);
                                             });
@@ -1437,9 +1457,20 @@ class TrustedASMPoliciesWorker {
                                         response.pipe(fws);
                                         fws.on('finish', () => {
                                             fws.close();
-                                            inFlightDownloads[inFlightDownloadIndex].notify.emit('downloaded', policyFile);
-                                            delete inFlightDownloads[inFlightDownloadIndex];
-                                            resolve(policyFile);
+                                            if (response.statusCode < 300) {
+                                                inFlightDownloads[inFlightDownloadIndex].notify.emit('downloaded', policyFile);
+                                                delete inFlightDownloads[inFlightDownloadIndex];
+                                                resolve(policyFile);
+                                            } else {
+                                                const downloadError = new Error(LOGGINGPREFIX + 'error downloading url ' + sourceUrl + ' - ' + response.statusCode);
+                                                this.logger.severe(downloadError.message);
+                                                if(fs.existsSync(filePath)) {
+                                                    fs.unlinkSync(filePath);
+                                                }
+                                                inFlightDownloads[inFlightDownloadIndex].notify.emit('downloadError', downloadError);
+                                                delete inFlightDownloads[inFlightDownloadIndex];
+                                                reject(downloadError);
+                                            }
                                         });
                                     }
                                 })
@@ -1447,7 +1478,7 @@ class TrustedASMPoliciesWorker {
                                     this.logger.severe(LOGGINGPREFIX + 'error downloading url ' + sourceUrl + ' - ' + err.message);
                                     fws.close();
                                     fs.unlinkSync(filePath);
-                                    inFlightDownloads[inFlightDownloadIndex].notify.emit('error', err);
+                                    inFlightDownloads[inFlightDownloadIndex].notify.emit('downloadError', err);
                                     delete inFlightDownloads[inFlightDownloadIndex];
                                     resolve(false);
                                 });
@@ -1455,13 +1486,13 @@ class TrustedASMPoliciesWorker {
                         }
                     } else {
                         const err = 'extension url must use the following protocols:' + JSON.stringify(VALIDDOWNLOADPROTOCOLS);
-                        inFlightDownloads[inFlightDownloadIndex].notify.emit('error', err);
+                        inFlightDownloads[inFlightDownloadIndex].notify.emit('downloadError', err);
                         delete inFlightDownloads[inFlightDownloadIndex];
                         reject(new Error(err));
                     }
                 }
             } catch (err) {
-                inFlightDownloads[inFlightDownloadIndex].notify.emit('error', err);
+                inFlightDownloads[inFlightDownloadIndex].notify.emit('downloadError', err);
                 delete inFlightDownloads[inFlightDownloadIndex];
                 reject(err);
             }
@@ -1476,7 +1507,7 @@ class TrustedASMPoliciesWorker {
                     inFlightDownloads[inFlightDownloadIndex].on('downloaded', (policyFile) => {
                         resolve(policyFile);
                     });
-                    inFlightDownloads[inFlightDownloadIndex].on('error', (err) => {
+                    inFlightDownloads[inFlightDownloadIndex].on('downloadError', (err) => {
                         reject(err);
                     });
                 } else {
@@ -1512,7 +1543,7 @@ class TrustedASMPoliciesWorker {
                                     this.logger.severe(downloadError.message);
                                     fws.close();
                                     fs.unlinkSync(filePath);
-                                    inFlightDownloads[inFlightDownloadIndex].notify.emit('error', downloadError);
+                                    inFlightDownloads[inFlightDownloadIndex].notify.emit('downloadError', downloadError);
                                     delete inFlightDownloads[inFlightDownloadIndex];
                                     reject(downloadError);
                                 } else {
@@ -1528,7 +1559,7 @@ class TrustedASMPoliciesWorker {
                                 this.logger.severe(LOGGINGPREFIX + 'error downloading policy ' + policyFile + ' from ' + sourceHost + ':' + sourcePort + ' - ' + err.message);
                                 fws.close();
                                 fs.unlinkSync(filePath);
-                                inFlightDownloads[inFlightDownloadIndex].notify.emit('error', err);
+                                inFlightDownloads[inFlightDownloadIndex].notify.emit('downloadError', err);
                                 delete inFlightDownloads[inFlightDownloadIndex];
                                 reject(err);
                             });
@@ -1551,7 +1582,7 @@ class TrustedASMPoliciesWorker {
                                         this.logger.severe(LOGGINGPREFIX + 'error downloading policy ' + policyFile + ' from ' + sourceHost + ':' + sourcePort + ' - ' + err.message);
                                         fws.close();
                                         fs.unlinkSync(filePath);
-                                        inFlightDownloads[inFlightDownloadIndex].notify.emit('error', err);
+                                        inFlightDownloads[inFlightDownloadIndex].notify.emit('downloadError', err);
                                         delete inFlightDownloads[inFlightDownloadIndex];
                                         reject(err);
                                     });
@@ -1561,7 +1592,7 @@ class TrustedASMPoliciesWorker {
                     }
                 }
             } catch (err) {
-                inFlightDownloads[inFlightDownloadIndex].notify.emit('error', err);
+                inFlightDownloads[inFlightDownloadIndex].notify.emit('downloadError', err);
                 delete inFlightDownloads[inFlightDownloadIndex];
                 reject(err);
             }

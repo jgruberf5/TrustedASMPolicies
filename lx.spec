@@ -1,6 +1,6 @@
 Summary: TrustedASMPolicies for the Application Services Gateway
 Name: TrustedASMPolicies
-Version: 1.0.4
+Version: 1.0.5
 Release: 0004
 BuildArch: noarch
 Group: Development/Libraries
@@ -14,6 +14,7 @@ iControl LX extension to export ASM policies from trusted TMOS devices and uploa
 
 %prep
 cp -r %{main}/src %{_builddir}/%{name}-%{version}
+cp -r %{main}/node_modules %{_builddir}/%{name}-%{version}/node_modules
 
 %build
 npm prune --production
