@@ -227,7 +227,7 @@ class TrustedASMPoliciesWorker {
                                         returnPolicies.push(policy);
                                     }
                                 });
-                                if (returnPolicies.length == 0) {
+                                if (returnPolicies.length === 0) {
                                     const err = new Error(`no policy with matching policyName or policyId found.`);
                                     err.httpStatusCode = 404;
                                     restOperation.fail(err);
