@@ -30,6 +30,7 @@ const DEVICEGROUP_PREFIX = 'TrustProxy_';
 const TASKTIMEOUT = 120000;
 
 const POLICYFILEPREFIX = 'exportedPolicy';
+const POLICYCACHETIME = 3600e3; // 1 hour
 
 const downloadDirectory = '/var/tmp';
 const VALIDDOWNLOADPROTOCOLS = ['file:', 'http:', 'https:'];
@@ -117,7 +118,7 @@ class TrustedASMPoliciesWorker {
 
     onStart(success) {
         this.clearPolicyFileCache();
-        setInterval(this.clearPolicyFileCache, 3600000);
+        setInterval(() => { this.clearPolicyFileCache(); }, POLICYCACHETIME);
         success();
     }
 
@@ -1727,24 +1728,21 @@ class TrustedASMPoliciesWorker {
     }
 
     clearPolicyFileCache() {
-        const inFlightFileNames = [];
-        Object.keys(requestedTasks).forEach((inFlightIndex) => {
-            const policyState = requestedTasks[inFlightIndex];
-            if (policyState.id && policyState.lastChanged) {
-                inFlightFileNames.push(this.resolvePolicyFileName(policyState.id, new Date(policyState.lastChanged).getTime()));
-            }
-        });
-        const files = fs.readdirSync(downloadDirectory);
-        const filesToDelete = [];
-        files.forEach((file) => {
+        fs.readdirSync(downloadDirectory).forEach((file) => {
             if (file.startsWith(POLICYFILEPREFIX)) {
-                if (!inFlightFileNames.includes(file)) {
-                    filesToDelete.push(file);
-                }
+                fs.stat(path.join(downloadDirectory, file), (err, stat) => {
+                    if(err) {
+                        this.logger.info(`TrustedASMPolicies: clearPolicyFileCache: ERROR: ${err}`);
+                        return;
+                    }
+                    const curTime = new Date().getTime();
+                    const expireTime = new Date(stat.ctime).getTime() + (POLICYCACHETIME - 100);
+                    if(curTime > expireTime) {
+                        fs.unlinkSync(`${downloadDirectory}/${file}`);
+                        this.logger.info(`TrustedASMPolcies: clearPolicyFileCache: cleaned up ${file}`);
+                    }
+                });
             }
-        });
-        filesToDelete.forEach((file) => {
-            fs.unlinkSync(`${downloadDirectory}/${file}`);
         });
     }
 
