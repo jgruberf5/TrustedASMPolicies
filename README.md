@@ -74,6 +74,8 @@ GET https://172.13.1.103/mgmt/shared/TrustedASMPolicies?targetHost=172.13.1.106
         "id": "DkhEogaI2u5fwK_kKo5Ctw",
         "name": "linux-high",
         "enforcementMode": "blocking",
+        "lastChanged": "2018-12-26T16:55:52Z",
+        "lastChange:": "Security Policy /Common/linux-high [update]: Enforcement Mode was set to Blocking. { audit: policy = /Common/linux-high, username = admin, client IP = 192.168.0.65 }",
         "state": "AVAILABLE",
         "path": "/Common/linux-high"
     },
@@ -81,6 +83,8 @@ GET https://172.13.1.103/mgmt/shared/TrustedASMPolicies?targetHost=172.13.1.106
         "id": "HjoMjahFu2fw2_hft6toj",
         "name": "linux-medium",
         "enforcementMode": "blocking",
+        "lastChanged": "2018-12-26T16:55:52Z",
+        "lastChange:": "Security Policy /Common/linux-medium [update]: Enforcement Mode was set to Blocking. { audit: policy = /Common/linux-medium, username = admin, client IP = 192.168.0.65 }",
         "state": "AVAILABLE",
         "path": "/Common/linux-medium"
     }
@@ -100,6 +104,8 @@ GET https://172.13.1.103/mgmt/shared/TrustedASMPolicies/8c79ab99-fa76-4e6e-a03a-
         "id": "DkhEogaI2u5fwK_kKo5Ctw",
         "name": "linux-high",
         "enforcementMode": "blocking",
+        "lastChanged": "2018-12-26T16:55:52Z",
+        "lastChange:": "Security Policy /Common/linux-high [update]: Enforcement Mode was set to Blocking. { audit: policy = /Common/linux-high, username = admin, client IP = 192.168.0.65 }",
         "state": "AVAILABLE",
         "path": "/Common/linux-high"
     },
@@ -107,6 +113,8 @@ GET https://172.13.1.103/mgmt/shared/TrustedASMPolicies/8c79ab99-fa76-4e6e-a03a-
         "id": "HjoMjahFu2fw2_hft6toj",
         "name": "linux-medium",
         "enforcementMode": "blocking",
+        "lastChanged": "2018-12-26T16:55:52Z",
+        "lastChange:": "Security Policy /Common/linux-medium [update]: Enforcement Mode was set to Blocking. { audit: policy = /Common/linux-medium, username = admin, client IP = 192.168.0.65 }",
         "state": "AVAILABLE",
         "path": "/Common/linux-medium"
     }
@@ -126,6 +134,8 @@ GET https://172.13.1.103/mgmt/shared/TrustedASMPolicies?targetHost=172.13.1.106&
     "id": "DkhEogaI2u5fwK_kKo5Ctw",
     "name": "linux-high",
     "enforcementMode": "blocking",
+    "lastChanged": "2018-12-26T16:55:52Z",
+    "lastChange:": "Security Policy /Common/linux-high [update]: Enforcement Mode was set to Blocking. { audit: policy = /Common/linux-high, username = admin, client IP = 192.168.0.65 }",
     "state": "AVAILABLE",
     "path": "/Common/linux-high"
 }
@@ -142,6 +152,8 @@ GET https://172.13.1.103/mgmt/shared/TrustedASMPolicies/8c79ab99-fa76-4e6e-a03a-
     "id": "DkhEogaI2u5fwK_kKo5Ctw",
     "name": "linux-high",
     "enforcementMode": "blocking",
+    "lastChanged": "2018-12-26T16:55:52Z",
+    "lastChange:": "Security Policy /Common/linux-high [update]: Enforcement Mode was set to Blocking. { audit: policy = /Common/linux-high, username = admin, client IP = 192.168.0.65 }",
     "state": "AVAILABLE",
     "path": "/Common/linux-high"
 }
@@ -331,6 +343,8 @@ GET https://172.13.1.103/mgmt/shared/TrustedASMPolicies?targetHost=173.13.1.106&
         "id": "DkhEogaI2u5fwK_kKo5Ctw",
         "name": "linux-high",
         "enforcementMode": "blocking",
+        "lastChanged": "2018-12-26T16:55:52Z",
+        "lastChange:": "Security Policy /Common/linux-high [update]: Enforcement Mode was set to Blocking. { audit: policy = /Common/linux-high, username = admin, client IP = 192.168.0.65 }",
         "state": "UPLOADING",
         "path": "/Common/linux-high"
     }
