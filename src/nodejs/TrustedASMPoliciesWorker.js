@@ -739,7 +739,7 @@ class TrustedASMPoliciesWorker {
     }
 
     validateTMOSCompatibility(sourceVersion, targetVersion) {
-        if (sourceVersion && targetVersion) {
+        /* if (sourceVersion && targetVersion) {
             if (sourceVersion.split('.')[0] == targetVersion.split('.')[0]) {
                 return true;
             } else {
@@ -748,6 +748,8 @@ class TrustedASMPoliciesWorker {
         } else {
             return false;
         }
+        */
+       return true;
     }
 
     validateFileIsValidASMPolicy(policyFile, targetVersion) {
@@ -945,7 +947,7 @@ class TrustedASMPoliciesWorker {
                     let task = response.getBody();
                     if(task.hasOwnProperty('id')) {
                         this.pollBulkTaskUntilFinished(targetHost, targetPort, task.id)
-                            .this(() => {
+                            .then(() => {
                                 resolve();
                             })
                             .catch((err) => {
