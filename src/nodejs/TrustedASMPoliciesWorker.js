@@ -117,6 +117,7 @@ class TrustedASMPoliciesWorker {
     }
 
     onStart(success) {
+        this.logger.info(LOGGINGPREFIX + 'received start event');
         this.clearPolicyFileCache();
         setInterval(() => { this.clearPolicyFileCache(); }, POLICYCACHETIME);
         success();
@@ -128,6 +129,7 @@ class TrustedASMPoliciesWorker {
      * @param {RestOperation} restOperation
      */
     onGet(restOperation) {
+        this.logger.info(LOGGINGPREFIX + 'received GET request event');
         const paths = restOperation.uri.pathname.split('/');
         const query = restOperation.getUri().query;
 
@@ -263,6 +265,7 @@ class TrustedASMPoliciesWorker {
      * @param {RestOperation} restOperation
      */
     onPost(restOperation) {
+        this.logger.info(LOGGINGPREFIX + 'received POST request event');
         const query = restOperation.getUri().query;
 
         let sourceDevice = null;
@@ -536,6 +539,7 @@ class TrustedASMPoliciesWorker {
      * @param {RestOperation} restOperation
      */
     onDelete(restOperation) {
+        this.logger.info(LOGGINGPREFIX + 'received DELETE request event');
         const paths = restOperation.uri.pathname.split('/');
         const query = restOperation.getUri().query;
 
