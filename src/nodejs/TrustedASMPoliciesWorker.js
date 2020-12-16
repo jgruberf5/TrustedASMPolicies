@@ -692,12 +692,12 @@ class TrustedASMPoliciesWorker {
         const inFlightIndex = `${targetHost}:${targetPort}:${policyId}`;
         if (state == FINISHED) {
             if (requestedTasks.hasOwnProperty(inFlightIndex)) {
-                this.logger.info(LOGGINGPREFIX + 'policy processing complete for policy: ' + policyId + ' removing state');
+                this.logger.info(LOGGINGPREFIX + 'policy processing complete for policy: ' + policyId + ' removing state - targetHost: ' + targetHost);
                 delete requestedTasks[inFlightIndex];
             }
         } else {
             if (!requestedTasks.hasOwnProperty(inFlightIndex)) {
-                this.logger.info(LOGGINGPREFIX + 'initializing policy: ' + policyId + ' processing state to:' + state);
+                this.logger.info(LOGGINGPREFIX + 'initializing policy: ' + policyId + ' processing state to:' + state + ' targetHost: ' + targetHost);
                 requestedTasks[inFlightIndex] = {
                     id: policyId,
                     name: policyId,
@@ -706,7 +706,7 @@ class TrustedASMPoliciesWorker {
                     path: 'UNKNOWN'
                 }
             } else {
-                this.logger.info(LOGGINGPREFIX + 'transitioning policy: ' + policyId + ' processing from state:' + requestedTasks[inFlightIndex].state + ' to state: ' + state);
+                this.logger.info(LOGGINGPREFIX + 'transitioning policy: ' + policyId + ' processing from state:' + requestedTasks[inFlightIndex].state + ' to state: ' + state + ' targetHost: ' + targetHost);
                 requestedTasks[inFlightIndex].state = state;
             }
             if(state == ERROR) {
