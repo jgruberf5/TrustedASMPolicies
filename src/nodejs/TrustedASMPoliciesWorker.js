@@ -651,6 +651,7 @@ class TrustedASMPoliciesWorker {
                     .then((response) => {
                         let policies = response.getBody();
                         if (policies.hasOwnProperty('items')) {
+                            this.logger.debug(LOGGINGPREFIX + 'getPoliciesOnBigIP on targetHost: ' + targetHost + ' returned:' + policies);
                             policies.items.forEach((policy) => {
                                 let returnPolicy = {
                                     id: policy.id,
