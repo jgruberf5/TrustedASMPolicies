@@ -321,13 +321,13 @@ class TrustedASMPoliciesWorker {
             sourceUrl = createBody.url;
         }
         if (createBody.hasOwnProperty('targetHost')) {
-            targetDevices = createBody.targetHost;
+            targetDevices = [createBody.targetHost];
         }
         if (createBody.hasOwnProperty('targetHosts')) {
             targetDevices = createBody.targetHosts;
         }
         if (createBody.hasOwnProperty('targetUUID')) {
-            targetDevices = createBody.targetUUID;
+            targetDevices = [createBody.targetUUID];
         }
         if (createBody.hasOwnProperty('targetUUIDs')) {
             targetDevices = createBody.targetUUIDs;
