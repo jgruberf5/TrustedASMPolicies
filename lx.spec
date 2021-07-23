@@ -1,7 +1,7 @@
 Summary: TrustedASMPolicies for the Application Services Gateway
 Name: TrustedASMPolicies
 Version: 1.0.6
-Release: 0004
+Release: 0005
 BuildArch: noarch
 Group: Development/Libraries
 License: Apache-2.0
