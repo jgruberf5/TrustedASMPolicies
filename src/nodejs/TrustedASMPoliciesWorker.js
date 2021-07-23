@@ -674,18 +674,18 @@ class TrustedASMPoliciesWorker {
         return new Promise((resolve, reject) => {
             // assume targetHost + targetPort have ASM provisioned
             // assume localhost should be returning only all inflight requests
-            let returnPolicies = [];
+            let returnPolicies = {};
             let inFlightPolicyIds = [];
             if (!excludeInFlight) {
                 Object.keys(requestedTasks).forEach((inFlightIndex) => {
                     if (targetHost != 'localhost') {
                         if (inFlightIndex.startsWith(targetHost + ':' + targetPort)) {
                             inFlightPolicyIds.push(requestedTasks[inFlightIndex].id);
-                            returnPolicies.push(requestedTasks[inFlightIndex]);
+                            returnPolicies[requestedTasks[inFlightIndex].name] = requestedTasks[inFlightIndex];
                         }
                     } else {
                         inFlightPolicyIds.push(requestedTasks[inFlightIndex].id);
-                        returnPolicies.push(requestedTasks[inFlightIndex]);
+                        returnPolicies[requestedTasks[inFlightIndex].name] = requestedTasks[inFlightIndex];
                     }
                 });
             }
@@ -695,7 +695,7 @@ class TrustedASMPoliciesWorker {
                     .then((response) => {
                         let policies = response.getBody();
                         if (policies.hasOwnProperty('items')) {
-                            this.logger.fine(LOGGINGPREFIX + 'getPoliciesOnBigIP on targetHost: ' + targetHost + ' returned:' + JSON.stringify(policies));
+                            this.logger.fine(LOGGINGPREFIX + 'getPoliciesOnBigIP on targetHost: ' + targetHost);
                             policies.items.forEach((policy) => {
                                 let returnPolicy = {
                                     id: policy.id,
@@ -712,13 +712,13 @@ class TrustedASMPoliciesWorker {
                                     returnPolicy.state = 'INACTIVE';
                                 }
                                 if (!inFlightPolicyIds.includes(policy.id)) {
-                                    returnPolicies.push(returnPolicy);
+                                    returnPolicies[policy.name] = returnPolicy;
                                 }
                             });
                         } else {
                             reject(new Error('policies request did not return a list of policies: ' + JSON.stringify(policies)));
                         }
-                        resolve(returnPolicies);
+                        resolve(Object.keys(returnPolicies).map(function(key) { return returnPolicies[key]; }));
                     })
                     .catch((err) => {
                         if (err.message.includes('java.net.ConnectException: Connection refused')) {
@@ -869,7 +869,7 @@ class TrustedASMPoliciesWorker {
     /* jshint ignore:start */
     importPolicyToBigIP(targetHost, targetPort, policyId, policyName, timestamp) {
         return new Promise((resolve, reject) => {
-            const inFlightImportIndex = `${targetHost}:${targetPort}:${policyId}`;
+            const inFlightImportIndex = `${targetHost}:${targetPort}:${policyName}`;
             if (inFlightImports.hasOwnProperty(inFlightImportIndex)) {
                 inFlightImports[inFlightImportIndex].notify.on('applied', (targetPolicyId) => {
                     resolve(targetPolicyId);
@@ -881,26 +881,26 @@ class TrustedASMPoliciesWorker {
                 inFlightImports[inFlightImportIndex] = {
                     notify: new EventEmitter()
                 };
-                this.updateInflightState(targetHost, targetPort, policyId, UPLOADING);
+                this.updateInflightState(targetHost, targetPort, policyName, UPLOADING);
                 this.uploadPolicyFileToBigIP(targetHost, targetPort, policyId, timestamp)
                     .then(() => {
-                        this.updateInflightState(targetHost, targetPort, policyId, IMPORTING);
+                        this.updateInflightState(targetHost, targetPort, policyName, IMPORTING);
                         return this.importTaskOnBigIP(targetHost, targetPort, policyId, policyName, timestamp);
                     })
                     .then((targetPolicyId) => {
-                        if (targetPolicyId != policyId) {
+                        //if (targetPolicyId != policyId) {
                             // move URL downloaded policies to ASM assigned Policy ID
-                            const returnPolicy = requestedTasks[`${targetHost}:${targetPort}:${policyId}`];
-                            returnPolicy.id = targetPolicyId;
-                            requestedTasks[`${targetHost}:${targetPort}:${targetPolicyId}`] = returnPolicy;
-                            delete requestedTasks[`${targetHost}:${targetPort}:${policyId}`];
-                            policyId = targetPolicyId;
-                        }
-                        this.updateInflightState(targetHost, targetPort, policyId, APPLYING);
+                        //    const returnPolicy = requestedTasks[`${targetHost}:${targetPort}:${policyName}`];
+                            
+                        //    policyId = returnPolicy.id;
+                        //    requestedTasks[`${targetHost}:${targetPort}:${policyName}`] = returnPolicy;
+                        //    delete requestedTasks[`${targetHost}:${targetPort}:${policyName}`];
+                        //}
+                        this.updateInflightState(targetHost, targetPort, policyName, APPLYING);
                         return this.applyTaskOnBigIP(targetHost, targetPort, targetPolicyId);
                     })
                     .then((targetPolicyId) => {
-                        this.updateInflightState(targetHost, targetPort, policyId, FINISHED);
+                        this.updateInflightState(targetHost, targetPort, policyName, FINISHED);
                         inFlightImports[inFlightImportIndex].notify.emit('applied', targetPolicyId);
                         delete inFlightImports[inFlightImportIndex];
                         resolve(targetPolicyId);
