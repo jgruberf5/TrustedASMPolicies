@@ -408,7 +408,7 @@ class TrustedASMPoliciesWorker {
                                 this.validateFileIsValidASMPolicy(policyFile, target.targetVersion)
                                     .then(() => {
                                         this.updateInflightState(target.targetHost, target.targetPort, targetPolicyName, QUERYING);
-                                        return this.getPoliciesOnBigIP(target.targetHost, target.targetPort);
+                                        return this.getPoliciesOnBigIP(target.targetHost, target.targetPort, true);
                                     })
                                     .then((targetPolicies) => {
                                         let needToRemove = false;
