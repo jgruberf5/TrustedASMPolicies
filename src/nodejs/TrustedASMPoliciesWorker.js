@@ -514,6 +514,7 @@ class TrustedASMPoliciesWorker {
                                             this.validateTarget(targetDevice)
                                                 .then((target) => {
                                                     this.logger.info(LOGGINGPREFIX + 'request made to import source policy ' + sourcePolicyName + ' as ' + targetPolicyName + ' from source device ' + source.targetUUID + ' ' + source.targetHost + ":" + source.targetPort + ' on device ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
+                                                    let requestIndex = `${target.targetHost}:${target.targetPort}:${targetPolicyName}`;
                                                     if (this.validateTMOSCompatibility(source.targetVersion, target.targetVersion)) {
                                                         this.updateInflightState(target.targetHost, target.targetPort, targetPolicyName, QUERYING);
                                                         this.getPoliciesOnBigIP(target.targetHost, target.targetPort, true)
@@ -697,7 +698,7 @@ class TrustedASMPoliciesWorker {
                     .then((response) => {
                         let policies = response.getBody();
                         if (policies.hasOwnProperty('items')) {
-                            this.logger.debug(LOGGINGPREFIX + 'getPoliciesOnBigIP on targetHost: ' + targetHost + ' returned:' + policies);
+                            this.logger.fine(LOGGINGPREFIX + 'getPoliciesOnBigIP on targetHost: ' + targetHost + ' returned:' + JSON.stringify(policies));
                             policies.items.forEach((policy) => {
                                 let returnPolicy = {
                                     id: policy.id,
