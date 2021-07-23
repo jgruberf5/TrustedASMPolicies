@@ -343,7 +343,7 @@ class TrustedASMPoliciesWorker {
         }
 
         // exit if no source policy and or policy targets
-        if ( (!sourceUrl) && (! ((policyName || policyId) && sourceDevice)) ) {
+        if ((!sourceUrl) && (!((policyName || policyId) && sourceDevice))) {
             const targetError = new Error('must supply a source URL or else a sourceHost or sourceUUID and a policyName');
             this.logger.severe(LOGGINGPREFIX + targetError.message);
             targetError.httpStatusCode = 404;
@@ -358,13 +358,13 @@ class TrustedASMPoliciesWorker {
                 }
             }
         }
-        if( ! (targetDevices.length > 0 && targetPolicyName) ) {
+        if (!(targetDevices.length > 0 && targetPolicyName)) {
             const targetError = new Error('must supply a targetHost, targetUUID, targetHosts, or targetUUIDs and a targetPolicyName');
             this.logger.severe(LOGGINGPREFIX + targetError.message);
             targetError.httpStatusCode = 404;
             restOperation.fail(targetError);
         }
-        // validate hosts and create request states
+        // validate hosts and create request states for initial return to POST request
         const validationPromises = [];
         const returnTasks = [];
         targetDevices.map((targetDevice) => {
@@ -393,36 +393,13 @@ class TrustedASMPoliciesWorker {
                     })
             );
         });
-        if (!sourceUrl) {
-            validationPromises.push(
-                this.validateTarget(sourceDevice)
-            );
-        }
-        Promise.all(validationPromises)
-            .then(() => {
-                // set state to DOWNLOADING for source URL download
-                if(sourceUrl) {
-                    targetDevices.map((targetDevice) => {
-                        this.validateTarget(targetDevice)
-                           .this((target) => {
-                               this.updateInflightState(target.targetHost, target.targetPort, targetPolicyName, DOWNLOADING);
-                           });
-                    });
-                }
-            })
-            .catch((err) => {
-                this.logger.severe(LOGGINGPREFIX + err.message);
-                err.httpStatusCode = 400;
-                restOperation.fail(err);
-            });
-
-
         if (sourceUrl) {
             // Download policy XML from a source URL and import and apply on target device
             const sourcePolicyTimestamp = new Date().getTime();
             this.downloadPolicyFile(sourceUrl, targetPolicyName, sourcePolicyTimestamp)
                 .then((policyFile) => {
                     targetDevices.map((targetDevice) => {
+                        // re-validate the target to make sure it is still valid for policy processing
                         this.validateTarget(targetDevice)
                             .then((target) => {
                                 this.logger.info(LOGGINGPREFIX + 'request made to import policy ' + targetPolicyName + ' from url ' + sourceUrl + ' on device ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
@@ -475,12 +452,14 @@ class TrustedASMPoliciesWorker {
                     err.httpStatusCode = 500;
                     restOperation.fail(err);
                 });
-            restOperation.statusCode = 202;
-            restOperation.setContentType('application/json');
-            this.completeRestOperation(restOperation);
-
         } else {
-            // Pull source policy from sourceDevice and push to targetDevice
+            // validate the source device before returning initial POST request response
+            validationPromises.push(this.validateTarget(sourceDevice));
+            // Use validate source device to populate source object for promise
+            // chain which pulls source policy and pushes to targetDevice(s).
+            // Calling twice is messy looking, but invalid source device will both
+            // trigger an error to initial POST request and stop further async 
+            // processing this way.
             this.validateTarget(sourceDevice)
                 .then((source) => {
                     // clean up input variable
@@ -511,6 +490,7 @@ class TrustedASMPoliciesWorker {
                                 this.exportPolicyFromBigIP(source.targetHost, source.targetPort, sourcePolicyId, sourcePolicyTimestamp)
                                     .then(() => {
                                         targetDevices.map((targetDevice) => {
+                                            // re-validate the target host to make sure it is still valid for policy processing
                                             this.validateTarget(targetDevice)
                                                 .then((target) => {
                                                     this.logger.info(LOGGINGPREFIX + 'request made to import source policy ' + sourcePolicyName + ' as ' + targetPolicyName + ' from source device ' + source.targetUUID + ' ' + source.targetHost + ":" + source.targetPort + ' on device ' + target.targetUUID + ' ' + target.targetHost + ':' + target.targetPort);
@@ -562,7 +542,6 @@ class TrustedASMPoliciesWorker {
                                         err.httpStatusCode = 500;
                                         restOperation.fail(err);
                                     });
-
                             }
                         })
                         .catch((err) => {
@@ -575,10 +554,28 @@ class TrustedASMPoliciesWorker {
                     restOperation.fail(err);
                 });
         }
-        restOperation.statusCode = 202;
-        restOperation.setContentType('application/json');
-        restOperation.body = returnTasks;
-        this.completeRestOperation(restOperation);
+        // wait for all validation promises to return before returning initial post response
+        Promise.all(validationPromises)
+            .then(() => {
+                // set state to DOWNLOADING for source URL download
+                if (sourceUrl) {
+                    targetDevices.map((targetDevice) => {
+                        this.validateTarget(targetDevice)
+                            .this((target) => {
+                                this.updateInflightState(target.targetHost, target.targetPort, targetPolicyName, DOWNLOADING);
+                            });
+                    });
+                }
+                restOperation.statusCode = 202;
+                restOperation.setContentType('application/json');
+                restOperation.body = returnTasks;
+                this.completeRestOperation(restOperation);
+            })
+            .catch((err) => {
+                this.logger.severe(LOGGINGPREFIX + err.message);
+                err.httpStatusCode = 400;
+                restOperation.fail(err);
+            });
     }
     /**
      * Delete can take 4 query params (targetHost, targetPort, policyId, policyName)
