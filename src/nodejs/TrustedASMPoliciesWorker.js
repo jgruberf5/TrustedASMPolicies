@@ -398,7 +398,7 @@ class TrustedASMPoliciesWorker {
             const sourcePolicyTimestamp = new Date().getTime();
             this.downloadPolicyFile(sourceUrl, targetPolicyName, sourcePolicyTimestamp)
                 .then((policyFile) => {
-                    targetDevices.map((targetDevice) => {
+                    targetDevices.map( (targetDevice) => {
                         // re-validate the target to make sure it is still valid for policy processing
                         this.validateTarget(targetDevice)
                             .then((target) => {
@@ -561,7 +561,7 @@ class TrustedASMPoliciesWorker {
                 if (sourceUrl) {
                     targetDevices.map((targetDevice) => {
                         this.validateTarget(targetDevice)
-                            .this((target) => {
+                            .then((target) => {
                                 this.updateInflightState(target.targetHost, target.targetPort, targetPolicyName, DOWNLOADING);
                             });
                     });
