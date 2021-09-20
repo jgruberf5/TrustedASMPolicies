@@ -267,13 +267,13 @@ You can specify either the `policyId` or the `policyName` to identify the ASM po
 
 The target device to import the policy is specified using the following parameters:
 
-| Parameter          | Value                                                          |
-| ------------------ | -------------------------------------------------------------- |
-| `targetHost`       | The trusted device host or if not supplied the local device.   |
-| `targetHosts`      | List of trusted device hosts to import the source policy.      |
-| `targetUUID`       | The trusted device UUID or if not supplied the local device.   |
-| `targetUUIDs`      | List of trusted device UUIDs to import the source policy.      |
-| `targetPolicyName` | Required name for the policy on the target device.             |
+| Parameter          | Value                                                        |
+| ------------------ | ------------------------------------------------------------ |
+| `targetHost`       | The trusted device host or if not supplied the local device. |
+| `targetHosts`      | List of trusted device hosts to import the source policy.    |
+| `targetUUID`       | The trusted device UUID or if not supplied the local device. |
+| `targetUUIDs`      | List of trusted device UUIDs to import the source policy.    |
+| `targetPolicyName` | Required name for the policy on the target device.           |
 
 These variables can be defined as either query variables or part of the `POST` body.
 

@@ -189,6 +189,7 @@ class TrustedASMPoliciesWorker {
                                 if (policyFound) {
                                     return this.exportPolicyFromBigIP(source.targetHost, source.targetPort, policyId, policyLastChanged);
                                 } else {
+                                    
                                     const throwError = new Error('could not find policy');
                                     throwError.httpStatusCode = 404;
                                     throw throwError;
@@ -398,7 +399,7 @@ class TrustedASMPoliciesWorker {
             const sourcePolicyTimestamp = new Date().getTime();
             this.downloadPolicyFile(sourceUrl, targetPolicyName, sourcePolicyTimestamp)
                 .then((policyFile) => {
-                    targetDevices.map( (targetDevice) => {
+                    targetDevices.map((targetDevice) => {
                         // re-validate the target to make sure it is still valid for policy processing
                         this.validateTarget(targetDevice)
                             .then((target) => {
@@ -691,11 +692,12 @@ class TrustedASMPoliciesWorker {
             }
             if (targetHost != 'localhost') {
                 // augment inFlight requests for targetHost:targetPort with ASM policies on device
+                this.logger.fine(LOGGINGPREFIX + 'making iControl REST to get ASM policies on targetHost: ' + targetHost)
                 this.restRequestSender.sendGet(this.getQueryPoliciesRestOp(targetHost, targetPort))
                     .then((response) => {
                         let policies = response.getBody();
                         if (policies.hasOwnProperty('items')) {
-                            this.logger.fine(LOGGINGPREFIX + 'getPoliciesOnBigIP on targetHost: ' + targetHost);
+                            this.logger.fine(LOGGINGPREFIX + 'getPoliciesOnBigIP on targetHost: ' + targetHost + ' returned: ' + JSON.stringify(policies));
                             policies.items.forEach((policy) => {
                                 let returnPolicy = {
                                     id: policy.id,
@@ -716,14 +718,16 @@ class TrustedASMPoliciesWorker {
                                 }
                             });
                         } else {
-                            reject(new Error('policies request did not return a list of policies: ' + JSON.stringify(policies)));
+                            this.logger.severe(LOGGINGPREFIX + 'iControl REST request to get ASM policies on targetHot: ' + targetHost + ' did not return a list of policies. Return body: ' + JSON.stringify(policies));
+                            reject(new Error('policies request did not return a list of policies. Returned body: ' + JSON.stringify(policies)));
                         }
-                        resolve(Object.keys(returnPolicies).map(function(key) { return returnPolicies[key]; }));
+                        resolve(Object.keys(returnPolicies).map(function (key) { return returnPolicies[key]; }));
                     })
                     .catch((err) => {
                         if (err.message.includes('java.net.ConnectException: Connection refused')) {
                             reject(new Error('ASM is not provisioned on ' + targetHost + ':' + targetPort));
                         } else {
+                            this.logger.severe(LOGGINGPREFIX + 'iControl REST reqeust to get ASM policies on targetHost: ' + targetHost + ' failed with exception response: ' + JSON.stringify({ message: err.message, stack: err.stack }))
                             reject(err);
                         }
                     });
@@ -889,9 +893,9 @@ class TrustedASMPoliciesWorker {
                     })
                     .then((targetPolicyId) => {
                         //if (targetPolicyId != policyId) {
-                            // move URL downloaded policies to ASM assigned Policy ID
+                        // move URL downloaded policies to ASM assigned Policy ID
                         //    const returnPolicy = requestedTasks[`${targetHost}:${targetPort}:${policyName}`];
-                            
+
                         //    policyId = returnPolicy.id;
                         //    requestedTasks[`${targetHost}:${targetPort}:${policyName}`] = returnPolicy;
                         //    delete requestedTasks[`${targetHost}:${targetPort}:${policyName}`];
@@ -1021,6 +1025,7 @@ class TrustedASMPoliciesWorker {
             protocol = 'http';
         }
         const destUri = `${protocol}://${targetHost}:${targetPort}/mgmt/tm/asm/policies?$select=id,name,fullPath,enforcementMode,active,versionDatetime,versionLastChange`;
+        this.logger.fine(LOGGINGPREFIX + 'preparing iControl REST GET request to : ' + destUri )
         const op = this.restOperationFactory.createRestOperationInstance()
             .setUri(url.parse(destUri))
             .setContentType("application/json");
@@ -1039,6 +1044,7 @@ class TrustedASMPoliciesWorker {
             protocol = 'http';
         }
         const destUri = `${protocol}://${sourceHost}:${sourcePort}/mgmt/tm/asm/tasks/export-policy`;
+        this.logger.fine(LOGGINGPREFIX + 'preparing iControl POST REST request to : ' + destUri )
         const destBody = {
             filename: this.resolvePolicyFileName(policyId, timestamp),
             minimal: true,
@@ -1066,6 +1072,7 @@ class TrustedASMPoliciesWorker {
             protocol = 'http';
         }
         const destUri = `${protocol}://${targetHost}:${targetPort}/mgmt/tm/asm/tasks/import-policy`;
+        this.logger.fine(LOGGINGPREFIX + 'preparing iControl POST REST request to : ' + destUri )
         const destBody = {
             filename: this.resolvePolicyFileName(policyId, timestamp),
             name: policyName
@@ -1090,6 +1097,7 @@ class TrustedASMPoliciesWorker {
             protocol = 'http';
         }
         const destUri = `${protocol}://${sourceHost}:${sourcePort}/mgmt/tm/asm/tasks/apply-policy`;
+        this.logger.fine(LOGGINGPREFIX + 'preparing iControl REST POST request to : ' + destUri )
         const destBody = {
             policyReference: {
                 link: "http://localhost/mgmt/tm/asm/policies/" + policyId
@@ -1115,6 +1123,7 @@ class TrustedASMPoliciesWorker {
             protocol = 'http';
         }
         const destUri = `${protocol}://${targetHost}:${targetPort}/mgmt/tm/asm/tasks/bulk`;
+        this.logger.fine(LOGGINGPREFIX + 'preparing iControl REST DELETE request to : ' + destUri )
         const destBody = {
             commands: [
                 {
@@ -1278,6 +1287,7 @@ class TrustedASMPoliciesWorker {
             protocol = 'http';
         }
         const destUri = `${protocol}://${targetHost}:${targetPort}/mgmt/tm/asm/tasks/${type}-policy/${taskId}`;
+        this.logger.fine(LOGGINGPREFIX + 'preparing iControl REST DELETE request to : ' + destUri )
         const op = this.restOperationFactory.createRestOperationInstance()
             .setUri(url.parse(destUri))
             .setContentType("application/json")
@@ -1297,6 +1307,7 @@ class TrustedASMPoliciesWorker {
             protocol = 'http';
         }
         const destUri = `${protocol}://${targetHost}:${targetPort}/mgmt/tm/asm/tasks/bulk/${taskId}`;
+        this.logger.fine(LOGGINGPREFIX + 'preparing iControl REST DELETE request to : ' + destUri )
         const op = this.restOperationFactory.createRestOperationInstance()
             .setUri(url.parse(destUri))
             .setContentType("application/json")
