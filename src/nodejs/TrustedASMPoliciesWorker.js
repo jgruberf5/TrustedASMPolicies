@@ -1,6 +1,5 @@
 /* jshint esversion: 6 */
 /* jshint node: true */
-/* jslint es6 */
 'use strict';
 
 const fs = require('fs');
@@ -616,7 +615,7 @@ class TrustedASMPoliciesWorker {
         // support async DELETING
         let async = false;
         if (query.async) {
-            if ( string(query.async).toLowerCase() === 'true' || string(query.async) === '1' ) {
+            if ( query.async.toLowerCase() === 'true' || query.async === '1' ) {
                 async = true;
             }
         }
@@ -629,12 +628,12 @@ class TrustedASMPoliciesWorker {
                 state: DELETING,
                 taskId: query.taskId
             };
-            checkTaskStatus = this.validateTarget(targetDevice)
+            let checkTaskStatus = this.validateTarget(targetDevice)
                 .then((target) => {
                     // populate response from target
                     returnPolicy.targetHost = target.targetHost;
                     returnPolicy.targetPort = target.targetPort;
-                    return this.getBulkTaskStatus(target.targetHost, target.targetPort, query.taskId)
+                    return this.getBulkTaskStatus(target.targetHost, target.targetPort, query.taskId);
                 })
                 .then((responseBody) => {
                     // populate response from ASM bulk task state
@@ -655,8 +654,8 @@ class TrustedASMPoliciesWorker {
                     restOperation.statusCode = 500;
                     returnPolicy.state = ERROR;
                     this.completeRestOperation(restOperation);
-                })
-            Promise.all([checkTaskStatus])
+                });
+            Promise.all([checkTaskStatus]);
         }
 
         this.validateTarget(targetDevice)
@@ -694,7 +693,7 @@ class TrustedASMPoliciesWorker {
                                 }
                             } else {
                                 if (targetPolicyState == AVAILABLE || targetPolicyState == INACTIVE) {
-                                    deleteReturn =  this.deleteTaskOnBigIP(target.targetHost, target.targetPort, targetPolicyId, async);
+                                    let deleteReturn =  this.deleteTaskOnBigIP(target.targetHost, target.targetPort, targetPolicyId, async);
                                     restOperation.statusCode = 200;
                                     if(async) {
                                         restOperation.statusCode = 202;
@@ -747,7 +746,7 @@ class TrustedASMPoliciesWorker {
             }
             if (targetHost != 'localhost') {
                 // augment inFlight requests for targetHost:targetPort with ASM policies on device
-                this.logger.fine(LOGGINGPREFIX + 'making iControl REST to get ASM policies on targetHost: ' + targetHost)
+                this.logger.fine(LOGGINGPREFIX + 'making iControl REST to get ASM policies on targetHost: ' + targetHost);
                 this.restRequestSender.sendGet(this.getQueryPoliciesRestOp(targetHost, targetPort))
                     .then((response) => {
                         let policies = response.getBody();
@@ -782,7 +781,7 @@ class TrustedASMPoliciesWorker {
                         if (err.message.includes('java.net.ConnectException: Connection refused')) {
                             reject(new Error('ASM is not provisioned on ' + targetHost + ':' + targetPort));
                         } else {
-                            this.logger.severe(LOGGINGPREFIX + 'iControl REST reqeust to get ASM policies on targetHost: ' + targetHost + ' failed with exception response: ' + JSON.stringify({ message: err.message, stack: err.stack }))
+                            this.logger.severe(LOGGINGPREFIX + 'iControl REST reqeust to get ASM policies on targetHost: ' + targetHost + ' failed with exception response: ' + JSON.stringify({ message: err.message, stack: err.stack }));
                             reject(err);
                         }
                     });
@@ -1050,8 +1049,7 @@ class TrustedASMPoliciesWorker {
     /* jshint ignore:end */
 
     /* jshint ignore:start */
-    /* ignore jslint start */
-    deleteTaskOnBigIP(targetHost, targetPort, policyId, async=false) {
+    deleteTaskOnBigIP(targetHost, targetPort, policyId, async) {
         return new Promise((resolve, reject) => {
             this.restRequestSender.sendPost(this.getDeletePolicyRestOp(targetHost, targetPort, policyId))
                 .then((response) => {
@@ -1084,7 +1082,6 @@ class TrustedASMPoliciesWorker {
                 })
         });
     }
-    /* ignore jslint end */
     /* jshint ignore:end */
 
     getQueryPoliciesRestOp(targetHost, targetPort) {
@@ -1093,7 +1090,7 @@ class TrustedASMPoliciesWorker {
             protocol = 'http';
         }
         const destUri = `${protocol}://${targetHost}:${targetPort}/mgmt/tm/asm/policies?$select=id,name,fullPath,enforcementMode,active,versionDatetime,versionLastChange`;
-        this.logger.fine(LOGGINGPREFIX + 'preparing iControl REST GET request to : ' + destUri )
+        this.logger.fine(LOGGINGPREFIX + 'preparing iControl REST GET request to : ' + destUri );
         const op = this.restOperationFactory.createRestOperationInstance()
             .setUri(url.parse(destUri))
             .setContentType("application/json");
@@ -1112,7 +1109,7 @@ class TrustedASMPoliciesWorker {
             protocol = 'http';
         }
         const destUri = `${protocol}://${sourceHost}:${sourcePort}/mgmt/tm/asm/tasks/export-policy`;
-        this.logger.fine(LOGGINGPREFIX + 'preparing iControl POST REST request to : ' + destUri )
+        this.logger.fine(LOGGINGPREFIX + 'preparing iControl POST REST request to : ' + destUri );
         const destBody = {
             filename: this.resolvePolicyFileName(policyId, timestamp),
             minimal: true,
@@ -1140,7 +1137,7 @@ class TrustedASMPoliciesWorker {
             protocol = 'http';
         }
         const destUri = `${protocol}://${targetHost}:${targetPort}/mgmt/tm/asm/tasks/import-policy`;
-        this.logger.fine(LOGGINGPREFIX + 'preparing iControl POST REST request to : ' + destUri )
+        this.logger.fine(LOGGINGPREFIX + 'preparing iControl POST REST request to : ' + destUri );
         const destBody = {
             filename: this.resolvePolicyFileName(policyId, timestamp),
             name: policyName
@@ -1165,7 +1162,7 @@ class TrustedASMPoliciesWorker {
             protocol = 'http';
         }
         const destUri = `${protocol}://${sourceHost}:${sourcePort}/mgmt/tm/asm/tasks/apply-policy`;
-        this.logger.fine(LOGGINGPREFIX + 'preparing iControl REST POST request to : ' + destUri )
+        this.logger.fine(LOGGINGPREFIX + 'preparing iControl REST POST request to : ' + destUri );
         const destBody = {
             policyReference: {
                 link: "http://localhost/mgmt/tm/asm/policies/" + policyId
@@ -1191,7 +1188,7 @@ class TrustedASMPoliciesWorker {
             protocol = 'http';
         }
         const destUri = `${protocol}://${targetHost}:${targetPort}/mgmt/tm/asm/tasks/bulk`;
-        this.logger.fine(LOGGINGPREFIX + 'preparing iControl REST DELETE request to : ' + destUri )
+        this.logger.fine(LOGGINGPREFIX + 'preparing iControl REST DELETE request to : ' + destUri );
         const destBody = {
             commands: [
                 {
@@ -1355,7 +1352,7 @@ class TrustedASMPoliciesWorker {
             protocol = 'http';
         }
         const destUri = `${protocol}://${targetHost}:${targetPort}/mgmt/tm/asm/tasks/${type}-policy/${taskId}`;
-        this.logger.fine(LOGGINGPREFIX + 'preparing iControl REST DELETE request to : ' + destUri )
+        this.logger.fine(LOGGINGPREFIX + 'preparing iControl REST DELETE request to : ' + destUri );
         const op = this.restOperationFactory.createRestOperationInstance()
             .setUri(url.parse(destUri))
             .setContentType("application/json")
@@ -1375,7 +1372,7 @@ class TrustedASMPoliciesWorker {
             protocol = 'http';
         }
         const destUri = `${protocol}://${targetHost}:${targetPort}/mgmt/tm/asm/tasks/bulk/${taskId}`;
-        this.logger.fine(LOGGINGPREFIX + 'preparing iControl REST DELETE request to : ' + destUri )
+        this.logger.fine(LOGGINGPREFIX + 'preparing iControl REST DELETE request to : ' + destUri );
         const op = this.restOperationFactory.createRestOperationInstance()
             .setUri(url.parse(destUri))
             .setContentType("application/json")
