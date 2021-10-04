@@ -1,5 +1,6 @@
 /* jshint esversion: 6 */
 /* jshint node: true */
+/* jslint es6 */
 'use strict';
 
 const fs = require('fs');
@@ -18,6 +19,8 @@ const QUERYING = 'QUERYING';
 const REMOVING = 'REMOVING';
 const EXPORTING = 'EXPORTING';
 const UPLOADING = 'UPLOADING';
+const DELETING = 'DELETING';
+const DELETED = 'DELETED';
 const IMPORTING = 'IMPORTING';
 const APPLYING = 'APPLYING';
 const FINISHED = 'COMPLETED';
@@ -425,7 +428,7 @@ class TrustedASMPoliciesWorker {
                                         if (needToRemove) {
                                             // the policy on the target device was not the right version, delete it and continue processing
                                             this.updateInflightState(target.targetHost, target.targetPort, targetPolicyName, REMOVING);
-                                            return this.deleteTaskOnBigIP(target.targetHost, target.targetPort, targetPolicyId);
+                                            return this.deleteTaskOnBigIP(target.targetHost, target.targetPort, targetPolicyId, false);
                                         }
                                     })
                                     .then(() => {
@@ -518,7 +521,7 @@ class TrustedASMPoliciesWorker {
                                                                 if (needToRemove) {
                                                                     // the policy on the target device was not the right version, delete it and continue processing
                                                                     this.updateInflightState(target.targetHost, target.targetPort, targetPolicyName, REMOVING);
-                                                                    return this.deleteTaskOnBigIP(target.targetHost, target.targetPort, targetPolicyId);
+                                                                    return this.deleteTaskOnBigIP(target.targetHost, target.targetPort, targetPolicyId, false);
                                                                 }
                                                             })
                                                             .then(() => {
@@ -610,6 +613,52 @@ class TrustedASMPoliciesWorker {
             policyName = query.policyName;
         }
 
+        // support async DELETING
+        let async = false;
+        if (query.async) {
+            if ( string(query.async).toLowerCase() === 'true' || string(query.async) === '1' ) {
+                async = true;
+            }
+        }
+
+        if(query.taskId) {
+            let returnPolicy = {
+                id: policyId,
+                targetHost: null,
+                targetPort: 443,
+                state: DELETING,
+                taskId: query.taskId
+            };
+            checkTaskStatus = this.validateTarget(targetDevice)
+                .then((target) => {
+                    // populate response from target
+                    returnPolicy.targetHost = target.targetHost;
+                    returnPolicy.targetPort = target.targetPort;
+                    return this.getBulkTaskStatus(target.targetHost, target.targetPort, query.taskId)
+                })
+                .then((responseBody) => {
+                    // populate response from ASM bulk task state
+                    restOperation.statusCode = 200;
+                    if (responseBody.hasOwnProperty('status')){
+                        if (responseBody.status == 'FINISHED') {
+                            returnPolicy.state = DELETED;
+                        }
+                        if(responseBody.status == 'FAILURE') {
+                            restOperation.statusCode = 500;
+                            returnPolicy.state = ERROR;
+                        }
+                        restOperation.body = returnPolicy;
+                        this.completeRestOperation(restOperation);
+                    }
+                })
+                .catch((err) => {
+                    restOperation.statusCode = 500;
+                    returnPolicy.state = ERROR;
+                    this.completeRestOperation(restOperation);
+                })
+            Promise.all([checkTaskStatus])
+        }
+
         this.validateTarget(targetDevice)
             .then((target) => {
                 this.getPoliciesOnBigIP(target.targetHost, target.targetPort)
@@ -645,7 +694,13 @@ class TrustedASMPoliciesWorker {
                                 }
                             } else {
                                 if (targetPolicyState == AVAILABLE || targetPolicyState == INACTIVE) {
-                                    return this.deleteTaskOnBigIP(target.targetHost, target.targetPort, targetPolicyId);
+                                    deleteReturn =  this.deleteTaskOnBigIP(target.targetHost, target.targetPort, targetPolicyId, async);
+                                    restOperation.statusCode = 200;
+                                    if(async) {
+                                        restOperation.statusCode = 202;
+                                    }
+                                    restOperation.body = deleteReturn;
+                                    this.completeRestOperation(restOperation);
                                 } else {
                                     const throwErr = new Error('can not delete policy on target: ' + target.targetHost + ":" + target.targetPort + ' - policy state is:' + targetPolicyState);
                                     throwErr.httpStatusCode = 409;
@@ -995,19 +1050,31 @@ class TrustedASMPoliciesWorker {
     /* jshint ignore:end */
 
     /* jshint ignore:start */
-    deleteTaskOnBigIP(targetHost, targetPort, policyId) {
+    /* ignore jslint start */
+    deleteTaskOnBigIP(targetHost, targetPort, policyId, async=false) {
         return new Promise((resolve, reject) => {
             this.restRequestSender.sendPost(this.getDeletePolicyRestOp(targetHost, targetPort, policyId))
                 .then((response) => {
                     let task = response.getBody();
                     if (task.hasOwnProperty('id')) {
-                        this.pollBulkTaskUntilFinished(targetHost, targetPort, task.id)
-                            .then(() => {
-                                resolve();
-                            })
-                            .catch((err) => {
-                                reject(err);
-                            })
+                        if (async) {
+                            let returnPolicy = {
+                                id: targetPolicyId,
+                                targetHost: target.targetHost,
+                                targetPort: target.targetPort,
+                                state: DELETING,
+                                taskId: task.id
+                            };
+                            resolve(returnPolicy);
+                        } else {
+                            this.pollBulkTaskUntilFinished(targetHost, targetPort, task.id)
+                                .then(() => {
+                                    resolve({});
+                                })
+                                .catch((err) => {
+                                    reject(err);
+                                });
+                        }
                     } else {
                         reject(new Error('policy delete request did not return a task ID: ' + JSON.stringify(task)))
                     }
@@ -1017,6 +1084,7 @@ class TrustedASMPoliciesWorker {
                 })
         });
     }
+    /* ignore jslint end */
     /* jshint ignore:end */
 
     getQueryPoliciesRestOp(targetHost, targetPort) {

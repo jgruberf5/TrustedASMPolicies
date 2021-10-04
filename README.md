@@ -192,6 +192,8 @@ DELETE requests follow the common TrustedDevice syntax and take the following pa
 | `targetUUID` | The trusted device UUID or if not supplied the local device.        |
 | `policyId`   | The ID of the ASM policy you want to delete from the target host.   |
 | `policyName` | The name of the ASM policy you want to delete from the target host. |
+| `async`      | Set to 'true' and to enable async mode where a response with a taskId is returned immediately. |
+| `taskId`     | 'policyId' must be set with 'taskId' set to the async taskId returned from an async DELETE. It will return the status of the DELETE process without further processing. |
 
 You can supply `targetHost` or `targetUUID`. If you supply `targetUUID` the `targetHost` and `targetPort` will be resolved for you.
 
@@ -211,9 +213,7 @@ DELETE https://172.13.1.103/mgmt/shared/TrustedASMPolicies/8c79ab99-fa76-4e6e-a0
 #### Response
 
 ```bash
-{
-    "msg": "policy removed on target 172.13.1.106:443"
-}
+{}
 ```
 
 Additionally, in keeping with the TrustedProxy model, policies can also be deleted using only the URI path variables for both the trusted device UUID and the policy ID.
@@ -233,16 +233,19 @@ DELETE https://172.13.1.103/mgmt/shared/TrustedASMPolicies?targetHost=172.13.1.1
 #### Response
 
 ```bash
-{
-    "msg": "policy removed on target 172.13.1.106:443"
-}
+{}
 ```
+DELETE https://172.13.1.103/mgmt/shared/TrustedASMPolicies?targetHost=172.13.1.106&policyName=linux-high&async=true
 
 #### Response
 
 ```bash
 {
-    "msg": "policy removed on target 172.13.1.106:443"
+    "id": "DkhEogaI2u5fwK_kKo5Ctw",
+    "targetHost": "172.13.1.103",
+    "targetPort": 443,
+    "state": "DELETING",
+    "taskId": "ac233d2b-f512-4ce2-b54d-b0c0074faf40"
 }
 ```
 
