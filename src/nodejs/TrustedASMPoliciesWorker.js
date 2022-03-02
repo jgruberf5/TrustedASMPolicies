@@ -102,7 +102,7 @@ const copyFile = (filePath, symlink) => {
                     fs.symlinkSync(filePath, dest);
                 } else {
                     fs.createReadStream(filePath).pipe(
-                        fs.createWriteStream(dest),
+                        fs.createWriteStream(dest)
                     );
                 }
             }
@@ -181,7 +181,7 @@ class TrustedASMPoliciesWorker {
             // Download Policy XML file from BIG-IP
             if (targetDevice) {
                 const err = new Error(
-                    `target device should not be defined when defining source device for policy XML file download`,
+                    `target device should not be defined when defining source device for policy XML file download`
                 );
                 err.httpStatusCode = 400;
                 restOperation.fail(err);
@@ -190,7 +190,7 @@ class TrustedASMPoliciesWorker {
                     let policyLastChanged = null;
                     return this.getPoliciesOnBigIP(
                         source.targetHost,
-                        source.targetPort,
+                        source.targetPort
                     )
                         .then((policies) => {
                             let policyFound = false;
@@ -204,7 +204,7 @@ class TrustedASMPoliciesWorker {
                                         policyName = policy.name;
                                         policyId = policy.id;
                                         policyLastChanged = new Date(
-                                            policy.lastChanged,
+                                            policy.lastChanged
                                         ).getTime();
                                     }
                                 }
@@ -214,11 +214,11 @@ class TrustedASMPoliciesWorker {
                                     source.targetHost,
                                     source.targetPort,
                                     policyId,
-                                    policyLastChanged,
+                                    policyLastChanged
                                 );
                             } else {
                                 const throwError = new Error(
-                                    'could not find policy',
+                                    'could not find policy'
                                 );
                                 throwError.httpStatusCode = 404;
                                 throw throwError;
@@ -227,7 +227,7 @@ class TrustedASMPoliciesWorker {
                         .then(() => {
                             return this.getPolicyFileContent(
                                 policyId,
-                                policyLastChanged,
+                                policyLastChanged
                             );
                         })
                         .then((policyContent) => {
@@ -248,7 +248,7 @@ class TrustedASMPoliciesWorker {
                 });
             } else {
                 const err = new Error(
-                    `you must supply either a policyName or policyId to retrieve a policy XML file`,
+                    `you must supply either a policyName or policyId to retrieve a policy XML file`
                 );
                 err.httpStatusCode = 400;
                 restOperation.fail(err);
@@ -259,7 +259,7 @@ class TrustedASMPoliciesWorker {
                 .then((target) => {
                     this.getPoliciesOnBigIP(
                         target.targetHost,
-                        target.targetPort,
+                        target.targetPort
                     )
                         .then((policies) => {
                             if (policyName || policyId) {
@@ -277,14 +277,14 @@ class TrustedASMPoliciesWorker {
                                 });
                                 if (returnPolicies.length === 0) {
                                     const err = new Error(
-                                        `no policy with matching policyName or policyId found.`,
+                                        `no policy with matching policyName or policyId found.`
                                     );
                                     err.httpStatusCode = 404;
                                     restOperation.fail(err);
                                 } else {
                                     restOperation.statusCode = 200;
                                     restOperation.setContentType(
-                                        'application/json',
+                                        'application/json'
                                     );
                                     restOperation.body = returnPolicies;
                                     this.completeRestOperation(restOperation);
@@ -292,7 +292,7 @@ class TrustedASMPoliciesWorker {
                             } else {
                                 restOperation.statusCode = 200;
                                 restOperation.setContentType(
-                                    'application/json',
+                                    'application/json'
                                 );
                                 restOperation.body = policies;
                                 this.completeRestOperation(restOperation);
@@ -394,7 +394,7 @@ class TrustedASMPoliciesWorker {
         // exit if no source policy and or policy targets
         if (!sourceUrl && !((policyName || policyId) && sourceDevice)) {
             const targetError = new Error(
-                'must supply a source URL or else a sourceHost or sourceUUID and a policyName',
+                'must supply a source URL or else a sourceHost or sourceUUID and a policyName'
             );
             this.logger.severe(LOGGINGPREFIX + targetError.message);
             targetError.httpStatusCode = 404;
@@ -411,7 +411,7 @@ class TrustedASMPoliciesWorker {
         }
         if (!(targetDevices.length > 0 && targetPolicyName)) {
             const targetError = new Error(
-                'must supply a targetHost, targetUUID, targetHosts, or targetUUIDs and a targetPolicyName',
+                'must supply a targetHost, targetUUID, targetHosts, or targetUUIDs and a targetPolicyName'
             );
             this.logger.severe(LOGGINGPREFIX + targetError.message);
             targetError.httpStatusCode = 404;
@@ -442,7 +442,7 @@ class TrustedASMPoliciesWorker {
                     }
                     requestedTasks[requestIndex] = returnPolicy;
                     returnTasks.push(returnPolicy);
-                }),
+                })
             );
         });
         if (sourceUrl) {
@@ -451,7 +451,7 @@ class TrustedASMPoliciesWorker {
             this.downloadPolicyFile(
                 sourceUrl,
                 targetPolicyName,
-                sourcePolicyTimestamp,
+                sourcePolicyTimestamp
             )
                 .then((policyFile) => {
                     targetDevices.map((targetDevice) => {
@@ -468,30 +468,30 @@ class TrustedASMPoliciesWorker {
                                     ' ' +
                                     target.targetHost +
                                     ':' +
-                                    target.targetPort,
+                                    target.targetPort
                             );
                             let requestIndex = `${target.targetHost}:${target.targetPort}:${targetPolicyName}`;
                             this.updateInflightState(
                                 target.targetHost,
                                 target.targetPort,
                                 targetPolicyName,
-                                IMPORTING,
+                                IMPORTING
                             );
                             this.validateFileIsValidASMPolicy(
                                 policyFile,
-                                target.targetVersion,
+                                target.targetVersion
                             )
                                 .then(() => {
                                     this.updateInflightState(
                                         target.targetHost,
                                         target.targetPort,
                                         targetPolicyName,
-                                        QUERYING,
+                                        QUERYING
                                     );
                                     return this.getPoliciesOnBigIP(
                                         target.targetHost,
                                         target.targetPort,
-                                        true,
+                                        true
                                     );
                                 })
                                 .then((targetPolicies) => {
@@ -507,7 +507,7 @@ class TrustedASMPoliciesWorker {
                                                 LOGGINGPREFIX +
                                                     'requested policy name:' +
                                                     targetPolicyName +
-                                                    ' was found on the target device. removing policy from target device.',
+                                                    ' was found on the target device. removing policy from target device.'
                                             );
                                             needToRemove = true;
                                             targetPolicyId = targetPolicy.id;
@@ -519,13 +519,13 @@ class TrustedASMPoliciesWorker {
                                             target.targetHost,
                                             target.targetPort,
                                             targetPolicyName,
-                                            REMOVING,
+                                            REMOVING
                                         );
                                         return this.deleteTaskOnBigIP(
                                             target.targetHost,
                                             target.targetPort,
                                             targetPolicyId,
-                                            false,
+                                            false
                                         );
                                     }
                                 })
@@ -535,7 +535,7 @@ class TrustedASMPoliciesWorker {
                                         target.targetPort,
                                         targetPolicyName,
                                         targetPolicyName,
-                                        sourcePolicyTimestamp,
+                                        sourcePolicyTimestamp
                                     );
                                 })
                                 .then((newPolicyId) => {
@@ -550,13 +550,13 @@ class TrustedASMPoliciesWorker {
                                             ' ' +
                                             target.targetHost +
                                             ':' +
-                                            target.targetPort,
+                                            target.targetPort
                                     );
                                 })
                                 .catch((err) => {
                                     if (
                                         requestedTasks.hasOwnProperty(
-                                            requestIndex,
+                                            requestIndex
                                         )
                                     ) {
                                         this.logger.severe(
@@ -565,27 +565,27 @@ class TrustedASMPoliciesWorker {
                                                 requestedTasks[requestIndex]
                                                     .state +
                                                 ' - ' +
-                                                err.message,
+                                                err.message
                                         );
                                         this.updateInflightState(
                                             target.targetHost,
                                             target.targetPort,
                                             targetPolicyName,
                                             ERROR,
-                                            err.message,
+                                            err.message
                                         );
                                     } else {
                                         this.logger.severe(
                                             LOGGINGPREFIX +
                                                 'error after applying ASM policy - ' +
-                                                err.message,
+                                                err.message
                                         );
                                         this.updateInflightState(
                                             target.targetHost,
                                             target.targetPort,
                                             targetPolicyName,
                                             ERROR,
-                                            err.message,
+                                            err.message
                                         );
                                     }
                                 });
@@ -620,7 +620,7 @@ class TrustedASMPoliciesWorker {
                     let requestIndex = null;
                     this.getPoliciesOnBigIP(
                         source.targetHost,
-                        source.targetPort,
+                        source.targetPort
                     )
                         .then((sourcePolicies) => {
                             sourcePolicies.forEach((sourcePolicy) => {
@@ -634,13 +634,13 @@ class TrustedASMPoliciesWorker {
                                     sourcePolicyLastChanged =
                                         sourcePolicy.lastChanged;
                                     sourcePolicyTimestamp = new Date(
-                                        sourcePolicy.lastChanged,
+                                        sourcePolicy.lastChanged
                                     ).getTime();
                                 }
                             });
                             if (!sourcePolicyName) {
                                 const throwErr = new Error(
-                                    `source policy ${policyName} could not be found on ${source.targetHost}:${source.targetPort}`,
+                                    `source policy ${policyName} could not be found on ${source.targetHost}:${source.targetPort}`
                                 );
                                 throw throwErr;
                             } else {
@@ -655,7 +655,7 @@ class TrustedASMPoliciesWorker {
                                         ' ' +
                                         source.targetHost +
                                         ':' +
-                                        source.targetPort,
+                                        source.targetPort
                                 );
                                 this.logger.info(
                                     LOGGINGPREFIX +
@@ -664,19 +664,19 @@ class TrustedASMPoliciesWorker {
                                         ' was found on source device as policy id: ' +
                                         sourcePolicyId +
                                         ' last changed: ' +
-                                        sourcePolicyLastChanged,
+                                        sourcePolicyLastChanged
                                 );
                                 this.exportPolicyFromBigIP(
                                     source.targetHost,
                                     source.targetPort,
                                     sourcePolicyId,
-                                    sourcePolicyTimestamp,
+                                    sourcePolicyTimestamp
                                 )
                                     .then(() => {
                                         targetDevices.map((targetDevice) => {
                                             // re-validate the target host to make sure it is still valid for policy processing
                                             this.validateTarget(
-                                                targetDevice,
+                                                targetDevice
                                             ).then((target) => {
                                                 this.logger.info(
                                                     LOGGINGPREFIX +
@@ -695,36 +695,36 @@ class TrustedASMPoliciesWorker {
                                                         ' ' +
                                                         target.targetHost +
                                                         ':' +
-                                                        target.targetPort,
+                                                        target.targetPort
                                                 );
                                                 let requestIndex = `${target.targetHost}:${target.targetPort}:${targetPolicyName}`;
                                                 if (
                                                     this.validateTMOSCompatibility(
                                                         source.targetVersion,
-                                                        target.targetVersion,
+                                                        target.targetVersion
                                                     )
                                                 ) {
                                                     this.updateInflightState(
                                                         target.targetHost,
                                                         target.targetPort,
                                                         targetPolicyName,
-                                                        QUERYING,
+                                                        QUERYING
                                                     );
                                                     this.getPoliciesOnBigIP(
                                                         target.targetHost,
                                                         target.targetPort,
-                                                        true,
+                                                        true
                                                     )
                                                         .then(
                                                             (
-                                                                targetPolicies,
+                                                                targetPolicies
                                                             ) => {
                                                                 let needToRemove = false;
                                                                 let targetPolicyId =
                                                                     null;
                                                                 targetPolicies.forEach(
                                                                     (
-                                                                        targetPolicy,
+                                                                        targetPolicy
                                                                     ) => {
                                                                         if (
                                                                             targetPolicyName ==
@@ -744,14 +744,14 @@ class TrustedASMPoliciesWorker {
                                                                                     ' ' +
                                                                                     target.targetHost +
                                                                                     ':' +
-                                                                                    target.targetPort,
+                                                                                    target.targetPort
                                                                             );
                                                                             // setting to FINISHED will remove the requestedTask entry
                                                                             this.updateInflightState(
                                                                                 target.targetHost,
                                                                                 target.targetPort,
                                                                                 targetPolicyName,
-                                                                                FINISHED,
+                                                                                FINISHED
                                                                             );
                                                                         } else if (
                                                                             targetPolicyName ==
@@ -766,13 +766,13 @@ class TrustedASMPoliciesWorker {
                                                                                     sourcePolicyLastChanged +
                                                                                     ' target: ' +
                                                                                     targetPolicy.lastChanged +
-                                                                                    ') were not the same. removing policy from target device.',
+                                                                                    ') were not the same. removing policy from target device.'
                                                                             );
                                                                             needToRemove = true;
                                                                             targetPolicyId =
                                                                                 targetPolicy.id;
                                                                         }
-                                                                    },
+                                                                    }
                                                                 );
                                                                 if (
                                                                     needToRemove
@@ -782,21 +782,21 @@ class TrustedASMPoliciesWorker {
                                                                         target.targetHost,
                                                                         target.targetPort,
                                                                         targetPolicyName,
-                                                                        REMOVING,
+                                                                        REMOVING
                                                                     );
                                                                     return this.deleteTaskOnBigIP(
                                                                         target.targetHost,
                                                                         target.targetPort,
                                                                         targetPolicyId,
-                                                                        false,
+                                                                        false
                                                                     );
                                                                 }
-                                                            },
+                                                            }
                                                         )
                                                         .then(() => {
                                                             if (
                                                                 requestedTasks.hasOwnProperty(
-                                                                    requestIndex,
+                                                                    requestIndex
                                                                 )
                                                             ) {
                                                                 return this.importPolicyToBigIP(
@@ -804,7 +804,7 @@ class TrustedASMPoliciesWorker {
                                                                     target.targetPort,
                                                                     sourcePolicyId,
                                                                     targetPolicyName,
-                                                                    sourcePolicyTimestamp,
+                                                                    sourcePolicyTimestamp
                                                                 );
                                                             }
                                                         })
@@ -818,14 +818,14 @@ class TrustedASMPoliciesWorker {
                                                                     ' ' +
                                                                     target.targetHost +
                                                                     ':' +
-                                                                    target.targetPort,
+                                                                    target.targetPort
                                                             );
                                                         })
                                                         .catch((err) => {
                                                             this.logger.severe(
                                                                 LOGGINGPREFIX +
                                                                     'error processing ASM policy - ' +
-                                                                    err.message,
+                                                                    err.message
                                                             );
                                                         });
                                                 } else {
@@ -836,7 +836,7 @@ class TrustedASMPoliciesWorker {
                                                             target.targetVersion +
                                                             ' on device ' +
                                                             target.targetUUID +
-                                                            '. Skipping policy import for this device.',
+                                                            '. Skipping policy import for this device.'
                                                     );
                                                 }
                                             });
@@ -870,7 +870,7 @@ class TrustedASMPoliciesWorker {
                                 target.targetHost,
                                 target.targetPort,
                                 targetPolicyName,
-                                DOWNLOADING,
+                                DOWNLOADING
                             );
                         });
                     });
@@ -942,7 +942,7 @@ class TrustedASMPoliciesWorker {
                     return this.getBulkTaskStatus(
                         target.targetHost,
                         target.targetPort,
-                        query.taskId,
+                        query.taskId
                     );
                 })
                 .then((responseBody) => {
@@ -988,14 +988,14 @@ class TrustedASMPoliciesWorker {
                         });
                         if (!targetPolicyId) {
                             const throwError = new Error(
-                                `policy could not be found on ${target.targetHost}:${target.targetPort}`,
+                                `policy could not be found on ${target.targetHost}:${target.targetPort}`
                             );
                             throwError.httpStatusCode = 404;
                         } else {
                             const inFlightIndex = `${target.targetHost}:${target.targetPort}:${targetPolicyId}`;
                             if (
                                 Object.keys(requestedTasks).includes(
-                                    inFlightIndex,
+                                    inFlightIndex
                                 )
                             ) {
                                 if (
@@ -1010,7 +1010,7 @@ class TrustedASMPoliciesWorker {
                                 } else {
                                     const throwErr = new Error(
                                         'can not delete policy while processing. Current policy processing state is:' +
-                                            requestedTasks[inFlightIndex].state,
+                                            requestedTasks[inFlightIndex].state
                                     );
                                     throwErr.httpStatusCode = 409;
                                     throw throwErr;
@@ -1024,7 +1024,7 @@ class TrustedASMPoliciesWorker {
                                         target.targetHost,
                                         target.targetPort,
                                         targetPolicyId,
-                                        async,
+                                        async
                                     );
                                     restOperation.statusCode = 200;
                                     if (async) {
@@ -1039,7 +1039,7 @@ class TrustedASMPoliciesWorker {
                                             ':' +
                                             target.targetPort +
                                             ' - policy state is:' +
-                                            targetPolicyState,
+                                            targetPolicyState
                                     );
                                     throwErr.httpStatusCode = 409;
                                     throw throwErr;
@@ -1075,18 +1075,18 @@ class TrustedASMPoliciesWorker {
                     if (targetHost != 'localhost') {
                         if (
                             inFlightIndex.startsWith(
-                                targetHost + ':' + targetPort,
+                                targetHost + ':' + targetPort
                             )
                         ) {
                             inFlightPolicyIds.push(
-                                requestedTasks[inFlightIndex].id,
+                                requestedTasks[inFlightIndex].id
                             );
                             returnPolicies[requestedTasks[inFlightIndex].name] =
                                 requestedTasks[inFlightIndex];
                         }
                     } else {
                         inFlightPolicyIds.push(
-                            requestedTasks[inFlightIndex].id,
+                            requestedTasks[inFlightIndex].id
                         );
                         returnPolicies[requestedTasks[inFlightIndex].name] =
                             requestedTasks[inFlightIndex];
@@ -1098,11 +1098,11 @@ class TrustedASMPoliciesWorker {
                 this.logger.fine(
                     LOGGINGPREFIX +
                         'making iControl REST to get ASM policies on targetHost: ' +
-                        targetHost,
+                        targetHost
                 );
                 this.restRequestSender
                     .sendGet(
-                        this.getQueryPoliciesRestOp(targetHost, targetPort),
+                        this.getQueryPoliciesRestOp(targetHost, targetPort)
                     )
                     .then((response) => {
                         let policies = response.getBody();
@@ -1112,7 +1112,7 @@ class TrustedASMPoliciesWorker {
                                     'getPoliciesOnBigIP on targetHost: ' +
                                     targetHost +
                                     ' returned: ' +
-                                    JSON.stringify(policies),
+                                    JSON.stringify(policies)
                             );
                             policies.items.forEach((policy) => {
                                 let returnPolicy = {
@@ -1139,25 +1139,25 @@ class TrustedASMPoliciesWorker {
                                     'iControl REST request to get ASM policies on targetHot: ' +
                                     targetHost +
                                     ' did not return a list of policies. Return body: ' +
-                                    JSON.stringify(policies),
+                                    JSON.stringify(policies)
                             );
                             reject(
                                 new Error(
                                     'policies request did not return a list of policies. Returned body: ' +
-                                        JSON.stringify(policies),
-                                ),
+                                        JSON.stringify(policies)
+                                )
                             );
                         }
                         resolve(
                             Object.keys(returnPolicies).map(function (key) {
                                 return returnPolicies[key];
-                            }),
+                            })
                         );
                     })
                     .catch((err) => {
                         if (
                             err.message.includes(
-                                'java.net.ConnectException: Connection refused',
+                                'java.net.ConnectException: Connection refused'
                             )
                         ) {
                             reject(
@@ -1165,8 +1165,8 @@ class TrustedASMPoliciesWorker {
                                     'ASM is not provisioned on ' +
                                         targetHost +
                                         ':' +
-                                        targetPort,
-                                ),
+                                        targetPort
+                                )
                             );
                         } else {
                             this.logger.severe(
@@ -1177,7 +1177,7 @@ class TrustedASMPoliciesWorker {
                                     JSON.stringify({
                                         message: err.message,
                                         stack: err.stack,
-                                    }),
+                                    })
                             );
                             reject(err);
                         }
@@ -1261,7 +1261,7 @@ class TrustedASMPoliciesWorker {
                 LOGGINGPREFIX +
                     'file ' +
                     policyFile +
-                    ' is not a valid ASM policy... deleting.',
+                    ' is not a valid ASM policy... deleting.'
             );
             try {
                 fs.unlinkSync(filePath);
@@ -1271,7 +1271,7 @@ class TrustedASMPoliciesWorker {
                         ' could not delete file ' +
                         policyFile +
                         ' - ' +
-                        err.message,
+                        err.message
                 );
             }
             return '0.0';
@@ -1305,7 +1305,7 @@ class TrustedASMPoliciesWorker {
                         'policy XML file TMOS version:' +
                             policyVersion +
                             ' is not compatible with ASM on ' +
-                            targetVersion,
+                            targetVersion
                     );
                     reject(err);
                 }
@@ -1508,7 +1508,7 @@ class TrustedASMPoliciesWorker {
                     ' from ' +
                     sourceHost +
                     ':' +
-                    sourcePort,
+                    sourcePort
             );
             this.restRequestSender
                 .sendPost(
@@ -1516,8 +1516,8 @@ class TrustedASMPoliciesWorker {
                         sourceHost,
                         sourcePort,
                         policyId,
-                        timestamp,
-                    ),
+                        timestamp
+                    )
                 )
                 .then((response) => {
                     let task = response.getBody();
@@ -1526,7 +1526,7 @@ class TrustedASMPoliciesWorker {
                             sourceHost,
                             sourcePort,
                             task.id,
-                            'export',
+                            'export'
                         )
                             .then(() => {
                                 resolve();
@@ -1538,8 +1538,8 @@ class TrustedASMPoliciesWorker {
                         reject(
                             new Error(
                                 'policy export request did not return a task ID: ' +
-                                    JSON.stringify(task),
-                            ),
+                                    JSON.stringify(task)
+                            )
                         );
                     }
                 })
@@ -1559,8 +1559,8 @@ class TrustedASMPoliciesWorker {
                         targetPort,
                         policyId,
                         policyName,
-                        timestamp,
-                    ),
+                        timestamp
+                    )
                 )
                 .then((response) => {
                     let task = response.getBody();
@@ -1574,13 +1574,13 @@ class TrustedASMPoliciesWorker {
                                 ':' +
                                 targetPort +
                                 ' task ID:' +
-                                task.id,
+                                task.id
                         );
                         this.pollTaskUntilFinished(
                             targetHost,
                             targetPort,
                             task.id,
-                            'import',
+                            'import'
                         )
                             .then((targetPolicyId) => {
                                 resolve(targetPolicyId);
@@ -1592,8 +1592,8 @@ class TrustedASMPoliciesWorker {
                         reject(
                             new Error(
                                 'policy import request did not return a task ID: ' +
-                                    JSON.stringify(task),
-                            ),
+                                    JSON.stringify(task)
+                            )
                         );
                     }
                 })
@@ -1702,7 +1702,7 @@ class TrustedASMPoliciesWorker {
         this.logger.fine(
             LOGGINGPREFIX +
                 'preparing iControl REST GET request to : ' +
-                destUri,
+                destUri
         );
         const op = this.restOperationFactory
             .createRestOperationInstance()
@@ -1727,7 +1727,7 @@ class TrustedASMPoliciesWorker {
         this.logger.fine(
             LOGGINGPREFIX +
                 'preparing iControl POST REST request to : ' +
-                destUri,
+                destUri
         );
         const destBody = {
             filename: this.resolvePolicyFileName(policyId, timestamp),
@@ -1761,7 +1761,7 @@ class TrustedASMPoliciesWorker {
         this.logger.fine(
             LOGGINGPREFIX +
                 'preparing iControl POST REST request to : ' +
-                destUri,
+                destUri
         );
         const destBody = {
             filename: this.resolvePolicyFileName(policyId, timestamp),
@@ -1792,7 +1792,7 @@ class TrustedASMPoliciesWorker {
         this.logger.fine(
             LOGGINGPREFIX +
                 'preparing iControl REST POST request to : ' +
-                destUri,
+                destUri
         );
         const destBody = {
             policyReference: {
@@ -1824,7 +1824,7 @@ class TrustedASMPoliciesWorker {
         this.logger.fine(
             LOGGINGPREFIX +
                 'preparing iControl REST DELETE request to : ' +
-                destUri,
+                destUri
         );
         const destBody = {
             commands: [
@@ -1869,7 +1869,7 @@ class TrustedASMPoliciesWorker {
                     ':' +
                     targetPort +
                     ' path ' +
-                    options.path,
+                    options.path
             );
             if (targetHost == 'localhost') {
                 options.port = 8100;
@@ -1948,7 +1948,7 @@ class TrustedASMPoliciesWorker {
                     ':' +
                     targetPort +
                     ' path ' +
-                    options.path,
+                    options.path
             );
             if (targetHost == 'localhost') {
                 options.port = 8100;
@@ -2018,7 +2018,7 @@ class TrustedASMPoliciesWorker {
         this.logger.fine(
             LOGGINGPREFIX +
                 'preparing iControl REST DELETE request to : ' +
-                destUri,
+                destUri
         );
         const op = this.restOperationFactory
             .createRestOperationInstance()
@@ -2044,7 +2044,7 @@ class TrustedASMPoliciesWorker {
         this.logger.fine(
             LOGGINGPREFIX +
                 'preparing iControl REST DELETE request to : ' +
-                destUri,
+                destUri
         );
         const op = this.restOperationFactory
             .createRestOperationInstance()
@@ -2086,8 +2086,8 @@ class TrustedASMPoliciesWorker {
                 });
                 reject(
                     new Error(
-                        'target ' + targetDevice + ' is not a trusted device.',
-                    ),
+                        'target ' + targetDevice + ' is not a trusted device.'
+                    )
                 );
             });
         });
@@ -2118,7 +2118,7 @@ class TrustedASMPoliciesWorker {
                             .catch((err) => {
                                 this.logger.severe(
                                     LOGGINGPREFIX +
-                                        'could not create device group',
+                                        'could not create device group'
                                 );
                                 reject(err);
                             });
@@ -2147,7 +2147,7 @@ class TrustedASMPoliciesWorker {
                     this.logger.severe(
                         LOGGINGPREFIX +
                             'could not get a list of device groups:' +
-                            err.message,
+                            err.message
                     );
                     reject(err);
                 });
@@ -2179,7 +2179,7 @@ class TrustedASMPoliciesWorker {
                                 devicesBody.items.forEach((device) => {
                                     if (
                                         device.hasOwnProperty(
-                                            'mcpDeviceName',
+                                            'mcpDeviceName'
                                         ) ||
                                         device.state == UNDISCOVERED
                                     ) {
@@ -2199,7 +2199,7 @@ class TrustedASMPoliciesWorker {
                                 this.logger.severe(
                                     LOGGINGPREFIX +
                                         'error getting devices from device group:' +
-                                        err.message,
+                                        err.message
                                 );
                                 reject(err);
                             });
@@ -2217,7 +2217,7 @@ class TrustedASMPoliciesWorker {
                     this.logger.severe(
                         LOGGINGPREFIX +
                             'error getting device groups:' +
-                            err.message,
+                            err.message
                     );
                     throw err;
                 });
@@ -2241,13 +2241,13 @@ class TrustedASMPoliciesWorker {
                                 if (
                                     responseBody.hasOwnProperty('result') &&
                                     responseBody.result.hasOwnProperty(
-                                        'policyReference',
+                                        'policyReference'
                                     )
                                 ) {
                                     returnData = path
                                         .basename(
                                             responseBody.result.policyReference
-                                                .link,
+                                                .link
                                         )
                                         .split('?')[0];
                                 } else {
@@ -2258,8 +2258,8 @@ class TrustedASMPoliciesWorker {
                                 reject(
                                     new Error(
                                         'Task failed returning ' +
-                                            JSON.stringify(responseBody),
-                                    ),
+                                            JSON.stringify(responseBody)
+                                    )
                                 );
                             } else {
                                 wait(pollDelay).then(() => {
@@ -2272,9 +2272,9 @@ class TrustedASMPoliciesWorker {
                                                     FINISHED +
                                                     ' status within timeout. Instead returned: ' +
                                                     JSON.stringify(
-                                                        responseBody,
-                                                    ),
-                                            ),
+                                                        responseBody
+                                                    )
+                                            )
                                         );
                                     }
                                 });
@@ -2309,8 +2309,8 @@ class TrustedASMPoliciesWorker {
                                 reject(
                                     new Error(
                                         'Task failed returning ' +
-                                            JSON.stringify(responseBody),
-                                    ),
+                                            JSON.stringify(responseBody)
+                                    )
                                 );
                             } else {
                                 wait(pollDelay).then(() => {
@@ -2323,9 +2323,9 @@ class TrustedASMPoliciesWorker {
                                                     FINISHED +
                                                     ' status within timeout. Instead returned: ' +
                                                     JSON.stringify(
-                                                        responseBody,
-                                                    ),
-                                            ),
+                                                        responseBody
+                                                    )
+                                            )
                                         );
                                     }
                                 });
@@ -2350,13 +2350,13 @@ class TrustedASMPoliciesWorker {
                         'downloaded',
                         (policyFile) => {
                             resolve(policyFile);
-                        },
+                        }
                     );
                     inFlightDownloads[inFlightDownloadIndex].notify.on(
                         'downloadError',
                         (err) => {
                             reject(err);
-                        },
+                        }
                     );
                 } else {
                     inFlightDownloads[inFlightDownloadIndex] = {
@@ -2364,14 +2364,14 @@ class TrustedASMPoliciesWorker {
                     };
                     const policyFile = this.resolvePolicyFileName(
                         policyId,
-                        timestamp,
+                        timestamp
                     );
                     this.logger.info(
                         LOGGINGPREFIX +
                             'downloading policy file:' +
                             policyFile +
                             ' from url:' +
-                            sourceUrl,
+                            sourceUrl
                     );
                     if (!sourceUrl) {
                         const err = new Error('soure URL was not defined');
@@ -2387,7 +2387,7 @@ class TrustedASMPoliciesWorker {
                                 '(' +
                                 fstats.size +
                                 ' bytes) is being replaced by file from: ' +
-                                sourceUrl,
+                                sourceUrl
                         );
                         fs.unlinkSync(filePath);
                     }
@@ -2410,7 +2410,7 @@ class TrustedASMPoliciesWorker {
                             }
                         } else if (parsedUrl.protocol == 'http:') {
                             this.logger.info(
-                                LOGGINGPREFIX + 'downloading ' + sourceUrl,
+                                LOGGINGPREFIX + 'downloading ' + sourceUrl
                             );
                             let fws = fs.createWriteStream(filePath);
                             let request = http
@@ -2422,7 +2422,7 @@ class TrustedASMPoliciesWorker {
                                     ) {
                                         fs.unlinkSync(filePath);
                                         const redirectUrlParsed = url.parse(
-                                            response.headers.location,
+                                            response.headers.location
                                         );
                                         let redirectUrl =
                                             parsedUrl.host +
@@ -2434,7 +2434,7 @@ class TrustedASMPoliciesWorker {
                                         this.logger.info(
                                             LOGGINGPREFIX +
                                                 'following download redirect to:' +
-                                                redirectUrl,
+                                                redirectUrl
                                         );
                                         fws = fs.createWriteStream(filePath);
                                         request = https
@@ -2445,8 +2445,8 @@ class TrustedASMPoliciesWorker {
                                                         response.statusCode +
                                                         ' body:' +
                                                         JSON.stringify(
-                                                            response.headers,
-                                                        ),
+                                                            response.headers
+                                                        )
                                                 );
                                                 response.pipe(fws);
                                                 fws.on('finish', () => {
@@ -2455,7 +2455,7 @@ class TrustedASMPoliciesWorker {
                                                         inFlightDownloadIndex
                                                     ].notify.emit(
                                                         'downloaded',
-                                                        policyFile,
+                                                        policyFile
                                                     );
                                                     delete inFlightDownloads[
                                                         inFlightDownloadIndex
@@ -2469,7 +2469,7 @@ class TrustedASMPoliciesWorker {
                                                         'error downloading url ' +
                                                         redirectUrl +
                                                         ' - ' +
-                                                        err.message,
+                                                        err.message
                                                 );
                                                 fws.close();
                                                 fs.unlinkSync(filePath);
@@ -2477,7 +2477,7 @@ class TrustedASMPoliciesWorker {
                                                     inFlightDownloadIndex
                                                 ].notify.emit(
                                                     'downloadError',
-                                                    err,
+                                                    err
                                                 );
                                                 delete inFlightDownloads[
                                                     inFlightDownloadIndex
@@ -2493,7 +2493,7 @@ class TrustedASMPoliciesWorker {
                                                     inFlightDownloadIndex
                                                 ].notify.emit(
                                                     'downloaded',
-                                                    policyFile,
+                                                    policyFile
                                                 );
                                                 delete inFlightDownloads[
                                                     inFlightDownloadIndex
@@ -2505,10 +2505,10 @@ class TrustedASMPoliciesWorker {
                                                         'error downloading url ' +
                                                         sourceUrl +
                                                         ' - ' +
-                                                        response.statusCode,
+                                                        response.statusCode
                                                 );
                                                 this.logger.severe(
-                                                    downloadError.message,
+                                                    downloadError.message
                                                 );
                                                 if (fs.existsSync(filePath)) {
                                                     fs.unlinkSync(filePath);
@@ -2517,7 +2517,7 @@ class TrustedASMPoliciesWorker {
                                                     inFlightDownloadIndex
                                                 ].notify.emit(
                                                     'downloadError',
-                                                    downloadError,
+                                                    downloadError
                                                 );
                                                 delete inFlightDownloads[
                                                     inFlightDownloadIndex
@@ -2533,7 +2533,7 @@ class TrustedASMPoliciesWorker {
                                             'error downloading url ' +
                                             sourceUrl +
                                             ' - ' +
-                                            err.message,
+                                            err.message
                                     );
                                     fws.close();
                                     fs.unlinkSync(filePath);
@@ -2548,7 +2548,7 @@ class TrustedASMPoliciesWorker {
                             request.end();
                         } else {
                             this.logger.info(
-                                LOGGINGPREFIX + 'downloading ' + sourceUrl,
+                                LOGGINGPREFIX + 'downloading ' + sourceUrl
                             );
                             process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = 0; // jshint ignore:line
                             let fws = fs.createWriteStream(filePath);
@@ -2561,7 +2561,7 @@ class TrustedASMPoliciesWorker {
                                     ) {
                                         fs.unlinkSync(filePath);
                                         const redirectUrlParsed = url.parse(
-                                            response.headers.location,
+                                            response.headers.location
                                         );
                                         let redirectUrl =
                                             parsedUrl.host +
@@ -2573,7 +2573,7 @@ class TrustedASMPoliciesWorker {
                                         this.logger.info(
                                             LOGGINGPREFIX +
                                                 'following download redirect to:' +
-                                                redirectUrl,
+                                                redirectUrl
                                         );
                                         fws = fs.createWriteStream(filePath);
                                         request = https
@@ -2584,8 +2584,8 @@ class TrustedASMPoliciesWorker {
                                                         response.statusCode +
                                                         ' body:' +
                                                         JSON.stringify(
-                                                            response.headers,
-                                                        ),
+                                                            response.headers
+                                                        )
                                                 );
                                                 response.pipe(fws);
                                                 fws.on('finish', () => {
@@ -2594,7 +2594,7 @@ class TrustedASMPoliciesWorker {
                                                         inFlightDownloadIndex
                                                     ].notify.emit(
                                                         'downloaded',
-                                                        policyFile,
+                                                        policyFile
                                                     );
                                                     delete inFlightDownloads[
                                                         inFlightDownloadIndex
@@ -2608,7 +2608,7 @@ class TrustedASMPoliciesWorker {
                                                         'error downloading url ' +
                                                         redirectUrl +
                                                         ' - ' +
-                                                        err.message,
+                                                        err.message
                                                 );
                                                 fws.close();
                                                 if (fs.existsSync(filePath)) {
@@ -2618,7 +2618,7 @@ class TrustedASMPoliciesWorker {
                                                     inFlightDownloadIndex
                                                 ].notify.emit(
                                                     'downloadError',
-                                                    policyFile,
+                                                    policyFile
                                                 );
                                                 delete inFlightDownloads[
                                                     inFlightDownloadIndex
@@ -2634,7 +2634,7 @@ class TrustedASMPoliciesWorker {
                                                     inFlightDownloadIndex
                                                 ].notify.emit(
                                                     'downloaded',
-                                                    policyFile,
+                                                    policyFile
                                                 );
                                                 delete inFlightDownloads[
                                                     inFlightDownloadIndex
@@ -2646,10 +2646,10 @@ class TrustedASMPoliciesWorker {
                                                         'error downloading url ' +
                                                         sourceUrl +
                                                         ' - ' +
-                                                        response.statusCode,
+                                                        response.statusCode
                                                 );
                                                 this.logger.severe(
-                                                    downloadError.message,
+                                                    downloadError.message
                                                 );
                                                 if (fs.existsSync(filePath)) {
                                                     fs.unlinkSync(filePath);
@@ -2658,7 +2658,7 @@ class TrustedASMPoliciesWorker {
                                                     inFlightDownloadIndex
                                                 ].notify.emit(
                                                     'downloadError',
-                                                    downloadError,
+                                                    downloadError
                                                 );
                                                 delete inFlightDownloads[
                                                     inFlightDownloadIndex
@@ -2674,7 +2674,7 @@ class TrustedASMPoliciesWorker {
                                             'error downloading url ' +
                                             sourceUrl +
                                             ' - ' +
-                                            err.message,
+                                            err.message
                                     );
                                     fws.close();
                                     fs.unlinkSync(filePath);
@@ -2694,7 +2694,7 @@ class TrustedASMPoliciesWorker {
                             JSON.stringify(VALIDDOWNLOADPROTOCOLS);
                         inFlightDownloads[inFlightDownloadIndex].notify.emit(
                             'downloadError',
-                            err,
+                            err
                         );
                         delete inFlightDownloads[inFlightDownloadIndex];
                         reject(new Error(err));
@@ -2703,7 +2703,7 @@ class TrustedASMPoliciesWorker {
             } catch (err) {
                 inFlightDownloads[inFlightDownloadIndex].notify.emit(
                     'downloadError',
-                    err,
+                    err
                 );
                 delete inFlightDownloads[inFlightDownloadIndex];
                 reject(err);
@@ -2720,13 +2720,13 @@ class TrustedASMPoliciesWorker {
                         'downloaded',
                         (policyFile) => {
                             resolve(policyFile);
-                        },
+                        }
                     );
                     inFlightDownloads[inFlightDownloadIndex].on(
                         'downloadError',
                         (err) => {
                             reject(err);
-                        },
+                        }
                     );
                 } else {
                     inFlightDownloads[inFlightDownloadIndex] = {
@@ -2737,7 +2737,7 @@ class TrustedASMPoliciesWorker {
                     }
                     const policyFile = this.resolvePolicyFileName(
                         policyId,
-                        timestamp,
+                        timestamp
                     );
                     this.logger.info(
                         LOGGINGPREFIX +
@@ -2746,7 +2746,7 @@ class TrustedASMPoliciesWorker {
                             ' from ' +
                             sourceHost +
                             ':' +
-                            sourcePort,
+                            sourcePort
                     );
                     const filePath = `${downloadDirectory}/${policyFile}`;
                     if (fs.existsSync(filePath)) {
@@ -2756,7 +2756,7 @@ class TrustedASMPoliciesWorker {
                                 policyId +
                                 ' last changed on ' +
                                 timestamp +
-                                ' was already downloaded.',
+                                ' was already downloaded.'
                         );
                         resolve(policyFile);
                     } else {
@@ -2769,7 +2769,7 @@ class TrustedASMPoliciesWorker {
                         this.logger.info(
                             LOGGINGPREFIX +
                                 'download file request options:' +
-                                JSON.stringify(options),
+                                JSON.stringify(options)
                         );
                         let fws = fs.createWriteStream(filePath);
                         if (sourceHost == 'localhost') {
@@ -2789,10 +2789,10 @@ class TrustedASMPoliciesWorker {
                                                 ':' +
                                                 sourcePort +
                                                 ' - ' +
-                                                JSON.stringify(response),
+                                                JSON.stringify(response)
                                         );
                                         this.logger.severe(
-                                            downloadError.message,
+                                            downloadError.message
                                         );
                                         fws.close();
                                         fs.unlinkSync(filePath);
@@ -2800,7 +2800,7 @@ class TrustedASMPoliciesWorker {
                                             inFlightDownloadIndex
                                         ].notify.emit(
                                             'downloadError',
-                                            downloadError,
+                                            downloadError
                                         );
                                         delete inFlightDownloads[
                                             inFlightDownloadIndex
@@ -2814,7 +2814,7 @@ class TrustedASMPoliciesWorker {
                                                 inFlightDownloadIndex
                                             ].notify.emit(
                                                 'downloaded',
-                                                policyFile,
+                                                policyFile
                                             );
                                             delete inFlightDownloads[
                                                 inFlightDownloadIndex
@@ -2833,7 +2833,7 @@ class TrustedASMPoliciesWorker {
                                             ':' +
                                             sourcePort +
                                             ' - ' +
-                                            err.message,
+                                            err.message
                                     );
                                     fws.close();
                                     fs.unlinkSync(filePath);
@@ -2860,7 +2860,7 @@ class TrustedASMPoliciesWorker {
                                                 inFlightDownloadIndex
                                             ].notify.emit(
                                                 'downloaded',
-                                                policyFile,
+                                                policyFile
                                             );
                                             delete inFlightDownloads[
                                                 inFlightDownloadIndex
@@ -2878,7 +2878,7 @@ class TrustedASMPoliciesWorker {
                                                 ':' +
                                                 sourcePort +
                                                 ' - ' +
-                                                err.message,
+                                                err.message
                                         );
                                         fws.close();
                                         fs.unlinkSync(filePath);
@@ -2898,7 +2898,7 @@ class TrustedASMPoliciesWorker {
             } catch (err) {
                 inFlightDownloads[inFlightDownloadIndex].notify.emit(
                     'downloadError',
-                    err,
+                    err
                 );
                 delete inFlightDownloads[inFlightDownloadIndex];
                 reject(err);
@@ -2929,7 +2929,7 @@ class TrustedASMPoliciesWorker {
                 ' to ' +
                 targetHost +
                 ':' +
-                targetPort,
+                targetPort
         );
         return new Promise((resolve, reject) => {
             const inFlightUploadIndex = `${targetHost}:${targetPort}:${policyId}:${timestamp}`;
@@ -2942,7 +2942,7 @@ class TrustedASMPoliciesWorker {
                             ' to ' +
                             targetHost +
                             ':' +
-                            targetPort,
+                            targetPort
                     );
                     if (!inFlightUploads.hasOwnProperty(inFlightUploadIndex)) {
                         if (fs.existsSync(errorFile)) {
@@ -2953,7 +2953,7 @@ class TrustedASMPoliciesWorker {
                                     targetHost +
                                     ':' +
                                     targetPort +
-                                    ' failed',
+                                    ' failed'
                             );
                             reject(err);
                         } else {
@@ -2978,7 +2978,7 @@ class TrustedASMPoliciesWorker {
                             ' to ' +
                             targetHost +
                             ':' +
-                            targetPort,
+                            targetPort
                     );
                     fs.unlinkSync(errorFile);
                 }
@@ -3025,7 +3025,7 @@ class TrustedASMPoliciesWorker {
                                     '-' +
                                     end +
                                     '/' +
-                                    fstats.size,
+                                    fstats.size
                             );
                             const req = httplib.request(postOptions, (res) => {
                                 if (res.statusCode > 399) {
@@ -3035,7 +3035,7 @@ class TrustedASMPoliciesWorker {
                                             ' end:' +
                                             end +
                                             ' return status: ' +
-                                            res.statusCode,
+                                            res.statusCode
                                     );
                                     delete inFlightUploads[inFlightUploadIndex];
                                     fs.closeSync(fs.openSync(errorFile, 'w'));
@@ -3082,7 +3082,7 @@ class TrustedASMPoliciesWorker {
                             ' to ' +
                             targetHost +
                             ':' +
-                            targetPort,
+                            targetPort
                     );
                     if (CHUNK_SIZE < fstats.size) uploadPart(0, CHUNK_SIZE - 1);
                     else uploadPart(0, fstats.size - 1);
@@ -3097,7 +3097,7 @@ class TrustedASMPoliciesWorker {
                 fs.stat(path.join(downloadDirectory, file), (err, stat) => {
                     if (err) {
                         this.logger.info(
-                            `TrustedASMPolicies: clearPolicyFileCache: ERROR: ${err}`,
+                            `TrustedASMPolicies: clearPolicyFileCache: ERROR: ${err}`
                         );
                         return;
                     }
@@ -3108,7 +3108,7 @@ class TrustedASMPoliciesWorker {
                     if (curTime > expireTime) {
                         fs.unlinkSync(`${downloadDirectory}/${file}`);
                         this.logger.info(
-                            `TrustedASMPolcies: clearPolicyFileCache: cleaned up ${file}`,
+                            `TrustedASMPolcies: clearPolicyFileCache: cleaned up ${file}`
                         );
                     }
                 });
