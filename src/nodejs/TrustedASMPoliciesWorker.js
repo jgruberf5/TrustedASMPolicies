@@ -355,7 +355,7 @@ class TrustedASMPoliciesWorker {
                 try {
                     new url.URL(sourceUrl);
                 } catch (err) {
-                    this.logger.server(LOGGINGPREFIX + err.message);
+                    this.logger.severe(LOGGINGPREFIX + err.message);
                     err.httpStatusCode = 404;
                     restOperation.fail(err);
                 }
@@ -589,6 +589,10 @@ class TrustedASMPoliciesWorker {
         this.logger.info(LOGGINGPREFIX + 'received DELETE request event');
         const paths = restOperation.uri.pathname.split('/');
         const query = restOperation.getUri().query;
+        this.logger.fine(`onDelete: paths=${JSON.stringify(paths)} query=${JSON.stringify(query)}`);
+        if(Object.keys(query).length === 0 && paths.length === 3) {
+            throw new Error(`DELETE request must specify (targetHost || targetUUID) && (policyId or policyName) as query parameters or have a URI in the format '.../TrustedASMPolicies/<targetHost||targetUUID>/<policyId||policyName>'`);
+        }
 
         let targetDevice = null;
         let policyId = null;
@@ -610,6 +614,8 @@ class TrustedASMPoliciesWorker {
 
         if (query.policyName) {
             policyName = query.policyName;
+        } else if (paths.length > 4) {
+            policyName = paths[4];
         }
 
         // support async DELETING
@@ -676,6 +682,7 @@ class TrustedASMPoliciesWorker {
                         if (!targetPolicyId) {
                             const throwError = new Error(`policy could not be found on ${target.targetHost}:${target.targetPort}`);
                             throwError.httpStatusCode = 404;
+                            throw throwError;
                         } else {
                             const inFlightIndex = `${target.targetHost}:${target.targetPort}:${targetPolicyId}`;
                             if (Object.keys(requestedTasks).includes(inFlightIndex)) {
@@ -693,13 +700,7 @@ class TrustedASMPoliciesWorker {
                                 }
                             } else {
                                 if (targetPolicyState == AVAILABLE || targetPolicyState == INACTIVE) {
-                                    let deleteReturn =  this.deleteTaskOnBigIP(target.targetHost, target.targetPort, targetPolicyId, async);
-                                    restOperation.statusCode = 200;
-                                    if(async) {
-                                        restOperation.statusCode = 202;
-                                    }
-                                    restOperation.body = deleteReturn;
-                                    this.completeRestOperation(restOperation);
+                                    return this.deleteTaskOnBigIP(target.targetHost, target.targetPort, targetPolicyId, async);
                                 } else {
                                     const throwErr = new Error('can not delete policy on target: ' + target.targetHost + ":" + target.targetPort + ' - policy state is:' + targetPolicyState);
                                     throwErr.httpStatusCode = 409;
@@ -708,11 +709,17 @@ class TrustedASMPoliciesWorker {
                             }
                         }
                     })
-                    .then(() => {
+                    .then((deleteReturn) => {
+                        if(!deleteReturn) {
+                            deleteReturn = {};
+                        }
                         restOperation.statusCode = 200;
-                        restOperation.body = {
-                            msg: `policy ${policyName} removed on target ${target.targetHost}:${target.targetPort}`
-                        };
+                        restOperation.body = deleteReturn;
+                        restOperation.body.msg = `policy ${policyName} removed on target ${target.targetHost}:${target.targetPort}`;                        
+                        if(async) {
+                            restOperation.statusCode = 202;
+                            restOperation.body.msg = `policy ${policyName} is being removed on target ${target.targetHost}:${target.targetPort}`;
+                        }
                         this.completeRestOperation(restOperation);
                     })
                     .catch((err) => {
@@ -751,7 +758,7 @@ class TrustedASMPoliciesWorker {
                     .then((response) => {
                         let policies = response.getBody();
                         if (policies.hasOwnProperty('items')) {
-                            this.logger.fine(LOGGINGPREFIX + 'getPoliciesOnBigIP on targetHost: ' + targetHost + ' returned: ' + JSON.stringify(policies));
+                            //this.logger.fine(LOGGINGPREFIX + 'getPoliciesOnBigIP on targetHost: ' + targetHost + ' returned: ' + JSON.stringify(policies));
                             policies.items.forEach((policy) => {
                                 let returnPolicy = {
                                     id: policy.id,
@@ -772,7 +779,7 @@ class TrustedASMPoliciesWorker {
                                 }
                             });
                         } else {
-                            this.logger.severe(LOGGINGPREFIX + 'iControl REST request to get ASM policies on targetHot: ' + targetHost + ' did not return a list of policies. Return body: ' + JSON.stringify(policies));
+                            this.logger.severe(LOGGINGPREFIX + 'iControl REST request to get ASM policies on targetHost: ' + targetHost + ' did not return a list of policies. Return body: ' + JSON.stringify(policies));
                             reject(new Error('policies request did not return a list of policies. Returned body: ' + JSON.stringify(policies)));
                         }
                         resolve(Object.keys(returnPolicies).map(function (key) { return returnPolicies[key]; }));
@@ -781,7 +788,7 @@ class TrustedASMPoliciesWorker {
                         if (err.message.includes('java.net.ConnectException: Connection refused')) {
                             reject(new Error('ASM is not provisioned on ' + targetHost + ':' + targetPort));
                         } else {
-                            this.logger.severe(LOGGINGPREFIX + 'iControl REST reqeust to get ASM policies on targetHost: ' + targetHost + ' failed with exception response: ' + JSON.stringify({ message: err.message, stack: err.stack }));
+                            this.logger.severe(LOGGINGPREFIX + 'iControl REST request to get ASM policies on targetHost: ' + targetHost + ' failed with exception response: ' + JSON.stringify({ message: err.message, stack: err.stack }));
                             reject(err);
                         }
                     });
@@ -1057,17 +1064,17 @@ class TrustedASMPoliciesWorker {
                     if (task.hasOwnProperty('id')) {
                         if (async) {
                             let returnPolicy = {
-                                id: targetPolicyId,
-                                targetHost: target.targetHost,
-                                targetPort: target.targetPort,
+                                id: policyId,
+                                targetHost: targetHost,
+                                targetPort: targetPort,
                                 state: DELETING,
                                 taskId: task.id
                             };
                             resolve(returnPolicy);
                         } else {
                             this.pollBulkTaskUntilFinished(targetHost, targetPort, task.id)
-                                .then(() => {
-                                    resolve({});
+                                .then((pollReturn) => {
+                                    resolve(pollReturn);
                                 })
                                 .catch((err) => {
                                     reject(err);
@@ -1100,7 +1107,7 @@ class TrustedASMPoliciesWorker {
         } else {
             op.setIdentifiedDeviceRequest(true);
         }
-        op.setHeader('Connection', 'close');
+        op.setHeaders({'Connection': 'close'});
         return op;
     }
 
@@ -1129,7 +1136,7 @@ class TrustedASMPoliciesWorker {
         } else {
             op.setIdentifiedDeviceRequest(true);
         }
-        op.setHeader('Connection', 'close');
+        op.setHeaders({'Connection': 'close'});
         return op;
     }
 
@@ -1155,7 +1162,7 @@ class TrustedASMPoliciesWorker {
         } else {
             op.setIdentifiedDeviceRequest(true);
         }
-        op.setHeader('Connection', 'close');
+        op.setHeaders({'Connection': 'close'});
         return op;
     }
 
@@ -1182,7 +1189,7 @@ class TrustedASMPoliciesWorker {
         } else {
             op.setIdentifiedDeviceRequest(true);
         }
-        op.setHeader('Connection', 'close');
+        op.setHeaders({'Connection': 'close'});
         return op;
     }
 
@@ -1213,7 +1220,7 @@ class TrustedASMPoliciesWorker {
         } else {
             op.setIdentifiedDeviceRequest(true);
         }
-        op.setHeader('Connection', 'close');
+        op.setHeaders({'Connection': 'close'});
         return op;
     }
 
@@ -1361,14 +1368,15 @@ class TrustedASMPoliciesWorker {
         const op = this.restOperationFactory.createRestOperationInstance()
             .setUri(url.parse(destUri))
             .setContentType("application/json")
-            .setMethod("Delete");
+            .setMethod("Delete")
+            .setHeaders({'Connection': 'close'});
+        
         if (targetHost == 'localhost') {
             op.setBasicAuthorization(localauth);
             op.setIsSetBasicAuthHeader(true);
         } else {
             op.setIdentifiedDeviceRequest(true);
         }
-        op.setHeader('Connection', 'close');
         return op;
     }
 
@@ -1389,7 +1397,7 @@ class TrustedASMPoliciesWorker {
         } else {
             op.setIdentifiedDeviceRequest(true);
         }
-        op.setHeader('Connection', 'close');
+        op.setHeaders({'Connection': 'close'});
         return op;
     }
 
@@ -1429,7 +1437,7 @@ class TrustedASMPoliciesWorker {
                 .setUri(this.url.parse(deviceGroupsUrl))
                 .setBasicAuthorization(localauth)
                 .setIsSetBasicAuthHeader(true)
-                .setHeader('Connection', 'close');
+                .setHeaders({'Connection': 'close'});
             this.restRequestSender.sendGet(deviceGroupsGetRequest)
                 .then((response) => {
                     let respBody = response.getBody();
@@ -1481,7 +1489,7 @@ class TrustedASMPoliciesWorker {
                             .setUri(this.url.parse(devicesGroupUrl))
                             .setBasicAuthorization(localauth)
                             .setIsSetBasicAuthHeader(true)
-                            .setHeader('Connection', 'close');
+                            .setHeaders({'Connection': 'close'});
                         const devicesGetPromise = this.restRequestSender.sendGet(devicesGetRequest)
                             .then((response) => {
                                 const devicesBody = response.getBody();
@@ -1578,7 +1586,7 @@ class TrustedASMPoliciesWorker {
                     .then((responseBody) => {
                         if (responseBody.hasOwnProperty('status')) {
                             if (responseBody.status === FINISHED) {
-                                resolve();
+                                resolve({status: responseBody.status});
                             } else if (responseBody.status === FAILURE) {
                                 reject(new Error('Task failed returning ' + JSON.stringify(responseBody)));
                             } else {
@@ -1620,7 +1628,7 @@ class TrustedASMPoliciesWorker {
                     const policyFile = this.resolvePolicyFileName(policyId, timestamp);
                     this.logger.info(LOGGINGPREFIX + 'downloading policy file:' + policyFile + ' from url:' + sourceUrl);
                     if (!sourceUrl) {
-                        const err = new Error('soure URL was not defined');
+                        const err = new Error('source URL was not defined');
                         reject(err);
                     }
                     const filePath = `${downloadDirectory}/${policyFile}`;
