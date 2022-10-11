@@ -669,12 +669,18 @@ class TrustedASMPoliciesWorker {
                 this.getPoliciesOnBigIP(target.targetHost, target.targetPort)
                     .then((policies) => {
                         let targetPolicyId = null;
+                        let targetPolicyName = null;
+                        let targetPolicyErrMsg = null;
                         let targetPolicyState = null;
                         policies.forEach((policy) => {
                             if (policyId && policy.id == policyId) {
+                                targetPolicyName = policy.name
+                                targetPolicyErrMsg = policy.errMessage
                                 targetPolicyId = policy.id;
                                 targetPolicyState = policy.state;
                             } else if (policyName && policy.name == policyName) {
+                                targetPolicyName = policy.name
+                                targetPolicyErrMsg = policy.errMessage
                                 targetPolicyId = policy.id;
                                 targetPolicyState = policy.state;
                             }
@@ -699,7 +705,13 @@ class TrustedASMPoliciesWorker {
                                     throw throwErr;
                                 }
                             } else {
-                                if (targetPolicyState == AVAILABLE || targetPolicyState == INACTIVE) {
+                                if (targetPolicyState == AVAILABLE || targetPolicyState == INACTIVE || 
+                                        (targetPolicyState == ERROR && targetPolicyErrMsg && targetPolicyErrMsg.indexOf('timeout') > -1)) {
+                                    if(targetPolicyState == ERROR){
+                                        const inFlightIndexByName = `${target.targetHost}:${target.targetPort}:${targetPolicyName}`;
+                                        this.logger.info(`Deleting the policy from requested tasks ${inFlightIndexByName}`)
+                                        delete requestedTasks[inFlightIndexByName];
+                                    }
                                     return this.deleteTaskOnBigIP(target.targetHost, target.targetPort, targetPolicyId, async);
                                 } else {
                                     const throwErr = new Error('can not delete policy on target: ' + target.targetHost + ":" + target.targetPort + ' - policy state is:' + targetPolicyState);
@@ -1100,6 +1112,7 @@ class TrustedASMPoliciesWorker {
         this.logger.fine(LOGGINGPREFIX + 'preparing iControl REST GET request to : ' + destUri );
         const op = this.restOperationFactory.createRestOperationInstance()
             .setUri(url.parse(destUri))
+            .setHeaders({'Connection': 'close'})
             .setContentType("application/json");
         if (targetHost == 'localhost') {
             op.setBasicAuthorization(localauth);
@@ -1107,7 +1120,6 @@ class TrustedASMPoliciesWorker {
         } else {
             op.setIdentifiedDeviceRequest(true);
         }
-        op.setHeaders({'Connection': 'close'});
         return op;
     }
 
@@ -1127,6 +1139,7 @@ class TrustedASMPoliciesWorker {
         };
         const op = this.restOperationFactory.createRestOperationInstance()
             .setUri(url.parse(destUri))
+            .setHeaders({'Connection': 'close'})
             .setContentType("application/json")
             .setMethod('Post')
             .setBody(destBody);
@@ -1136,7 +1149,6 @@ class TrustedASMPoliciesWorker {
         } else {
             op.setIdentifiedDeviceRequest(true);
         }
-        op.setHeaders({'Connection': 'close'});
         return op;
     }
 
@@ -1153,6 +1165,7 @@ class TrustedASMPoliciesWorker {
         };
         const op = this.restOperationFactory.createRestOperationInstance()
             .setUri(url.parse(destUri))
+            .setHeaders({'Connection': 'close'})
             .setContentType("application/json")
             .setMethod('Post')
             .setBody(destBody);
@@ -1162,7 +1175,6 @@ class TrustedASMPoliciesWorker {
         } else {
             op.setIdentifiedDeviceRequest(true);
         }
-        op.setHeaders({'Connection': 'close'});
         return op;
     }
 
@@ -1180,6 +1192,7 @@ class TrustedASMPoliciesWorker {
         };
         const op = this.restOperationFactory.createRestOperationInstance()
             .setUri(url.parse(destUri))
+            .setHeaders({'Connection': 'close'})
             .setContentType("application/json")
             .setMethod('Post')
             .setBody(destBody);
@@ -1189,7 +1202,6 @@ class TrustedASMPoliciesWorker {
         } else {
             op.setIdentifiedDeviceRequest(true);
         }
-        op.setHeaders({'Connection': 'close'});
         return op;
     }
 
@@ -1211,6 +1223,7 @@ class TrustedASMPoliciesWorker {
         };
         const op = this.restOperationFactory.createRestOperationInstance()
             .setUri(url.parse(destUri))
+            .setHeaders({'Connection': 'close'})
             .setContentType("application/json")
             .setMethod('Post')
             .setBody(destBody);
@@ -1220,7 +1233,6 @@ class TrustedASMPoliciesWorker {
         } else {
             op.setIdentifiedDeviceRequest(true);
         }
-        op.setHeaders({'Connection': 'close'});
         return op;
     }
 
@@ -1367,9 +1379,9 @@ class TrustedASMPoliciesWorker {
         this.logger.fine(LOGGINGPREFIX + 'preparing iControl REST DELETE request to : ' + destUri );
         const op = this.restOperationFactory.createRestOperationInstance()
             .setUri(url.parse(destUri))
+            .setHeaders({'Connection': 'close'})
             .setContentType("application/json")
-            .setMethod("Delete")
-            .setHeaders({'Connection': 'close'});
+            .setMethod("Delete");
         
         if (targetHost == 'localhost') {
             op.setBasicAuthorization(localauth);
@@ -1389,6 +1401,7 @@ class TrustedASMPoliciesWorker {
         this.logger.fine(LOGGINGPREFIX + 'preparing iControl REST DELETE request to : ' + destUri );
         const op = this.restOperationFactory.createRestOperationInstance()
             .setUri(url.parse(destUri))
+            .setHeaders({'Connection': 'close'})
             .setContentType("application/json")
             .setMethod("Delete");
         if (targetHost == 'localhost') {
@@ -1397,7 +1410,6 @@ class TrustedASMPoliciesWorker {
         } else {
             op.setIdentifiedDeviceRequest(true);
         }
-        op.setHeaders({'Connection': 'close'});
         return op;
     }
 
@@ -1435,9 +1447,9 @@ class TrustedASMPoliciesWorker {
         return new Promise((resolve, reject) => {
             const deviceGroupsGetRequest = this.restOperationFactory.createRestOperationInstance()
                 .setUri(this.url.parse(deviceGroupsUrl))
+                .setHeaders({'Connection': 'close'})
                 .setBasicAuthorization(localauth)
-                .setIsSetBasicAuthHeader(true)
-                .setHeaders({'Connection': 'close'});
+                .setIsSetBasicAuthHeader(true);
             this.restRequestSender.sendGet(deviceGroupsGetRequest)
                 .then((response) => {
                     let respBody = response.getBody();
@@ -1487,9 +1499,9 @@ class TrustedASMPoliciesWorker {
                         const devicesGroupUrl = deviceGroupsUrl + '/' + devicegroup.groupName + '/devices';
                         const devicesGetRequest = this.restOperationFactory.createRestOperationInstance()
                             .setUri(this.url.parse(devicesGroupUrl))
+                            .setHeaders({'Connection': 'close'})
                             .setBasicAuthorization(localauth)
-                            .setIsSetBasicAuthHeader(true)
-                            .setHeaders({'Connection': 'close'});
+                            .setIsSetBasicAuthHeader(true);
                         const devicesGetPromise = this.restRequestSender.sendGet(devicesGetRequest)
                             .then((response) => {
                                 const devicesBody = response.getBody();
